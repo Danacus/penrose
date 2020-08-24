@@ -11,17 +11,38 @@ extern crate penrose;
 
 use penrose::{
     client::Client,
+    workspace::Workspace,
     contrib::{
         extensions::Scratchpad,
         hooks::{DefaultWorkspace, LayoutSymbolAsRootName},
         layouts::paper,
     },
     hooks::Hook,
-    layout::{bottom_stack, side_stack, Layout, LayoutConf},
+    layout::{bottom_stack, side_stack, monocle, Layout, LayoutConf},
     Backward, Config, Forward, Less, More, WindowManager, XcbConnection,
+    draw::*, 
+    data_types::Selector,
 };
 
+use std::error::Error;
+
 use simplelog::{LevelFilter, SimpleLogger};
+
+
+
+const HEIGHT: usize = 18;
+
+const PROFONT: &'static str = "ProFont For Powerline";
+const FIRA: &'static str = "Fira Code";
+const SERIF: &'static str = "Serif";
+
+const BLACK: u32 = 0x282828;
+const GREY: u32 = 0x3c3836;
+const WHITE: u32 = 0xebdbb2;
+const PURPLE: u32 = 0xb16286;
+const BLUE: u32 = 0x458588;
+const RED: u32 = 0xcc241d;
+
 
 // An example of a simple custom hook. In this case we are creating a NewClientHook which will
 // be run each time a new client program is spawned.
@@ -32,7 +53,7 @@ impl Hook for MyClientHook {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     // penrose will log useful information about the current state of the WindowManager during
     // normal operation that can be used to drive scripts and related programs. Additional debug
     // output can be helpful if you are hitting issues.
@@ -75,6 +96,7 @@ fn main() {
         Layout::new("[side]", LayoutConf::default(), side_stack, n_main, ratio),
         Layout::new("[botm]", LayoutConf::default(), bottom_stack, n_main, ratio),
         Layout::new("[papr]", follow_focus_conf, paper, n_main, ratio),
+        Layout::new("[full]", LayoutConf::default(), monocle, n_main, ratio),
         Layout::floating("[----]"),
     ];
 
@@ -82,6 +104,27 @@ fn main() {
     let my_program_launcher = "rofi -show drun";
     let my_file_manager = "dolphin";
     let my_terminal = "alacritty";
+
+    let workspaces = &["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    let style = TextStyle {
+        font: PROFONT.to_string(),
+        point_size: 11,
+        fg: WHITE.into(),
+        bg: Some(BLACK.into()),
+        padding: (2.0, 2.0),
+    };
+    let highlight = BLUE;
+    let empty_ws = GREY;
+
+    let mut bar = dwm_bar(
+        Box::new(XCBDraw::new()?),
+        0,
+        HEIGHT,
+        &style,
+        highlight,
+        empty_ws,
+        workspaces,
+    )?;
 
     /* hooks
      *
@@ -93,6 +136,7 @@ fn main() {
      * modify their behaviour if desired.
      */
     config.hooks.push(Box::new(MyClientHook {}));
+    config.hooks.push(Box::new(bar));
 
     // Using a simple contrib hook that takes no config. By convention, contrib hooks have a 'new'
     // method that returns a boxed instance of the hook with any configuration performed so that it
@@ -127,6 +171,7 @@ fn main() {
         // Program launch
         "M-d" => run_external!(my_program_launcher),
         "M-Return" => run_external!(my_terminal),
+        "M-f" => run_internal!(set_layout, "[full]"),
 
         // client management
         "M-j" => run_internal!(cycle_client, Forward),
@@ -153,7 +198,9 @@ fn main() {
 
         "M-A-s" => run_internal!(detect_screens),
 
-        "M-A-Escape" => run_internal!(exit);
+        "M-A-Escape" => run_internal!(exit),
+
+        "M-t" => Box::new(|wm| test_new_functions(wm));
 
         // Each keybinding here will be templated in with the workspace index of each workspace,
         // allowing for common workspace actions to be bound at once.
@@ -180,4 +227,30 @@ fn main() {
     // event loop. From this point on, program control passes to the WindowManager so make sure
     // that any logic you wish to run is done before here!
     wm.grab_keys_and_run(key_bindings);
+
+    Ok(())
+}
+
+fn test_new_functions(wm: &mut WindowManager) {
+    wm.log("hello");
+
+    let all = wm.all_clients(&Selector::Condition(&|c: &Client| c.workspace() == 0));
+    wm.log(&format!("{:#?}", all));
+
+    let all = wm.all_workspaces(&Selector::Condition(&|w: &Workspace| w.len() > 0));
+    wm.log(&format!("{:#?}", all));
+}
+
+fn setup_bar() -> Result<StatusBar<XCBDrawContext>, Box<dyn Error>> {
+    let mut bar = StatusBar::try_new(
+        Box::new(XCBDraw::new()?),
+        Position::Top,
+        0,
+        18,
+        Color::from(0x3c3836),
+        &["Fira Code"],
+        Vec::new(),
+    )?;
+
+    Ok(bar)
 }
