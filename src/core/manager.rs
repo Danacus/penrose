@@ -485,6 +485,16 @@ impl<'a> WindowManager<'a> {
         self.apply_layout(wix);
     }
 
+    /// Set Layout for the active Workspace
+    pub fn set_layout(&mut self, symbol: &str) {
+        let wix = self.active_ws_index();
+        self.workspaces.get_mut(wix).map(|ws| {
+            ws.try_set_layout(symbol);
+        });
+        run_hooks!(layout_change, self, wix, self.active_screen_index());
+        self.apply_layout(wix);
+    }
+
     /// Increase or decrease the number of clients in the main area by 1
     pub fn update_max_main(&mut self, change: Change) {
         let wix = self.active_ws_index();
@@ -692,6 +702,36 @@ impl<'a> WindowManager<'a> {
         }
     }
 
+    /// Get a vector of references to Workspaces satisfying 'selector'. WinId selectors will return
+    /// a vector with the workspace containing that Client if the client is known. Otherwise an
+    /// empty vector will be returned.
+    pub fn all_workspaces(&self, selector: &Selector<Workspace>) -> Vec<&Workspace> {
+        if let Selector::WinId(id) = selector {
+            self.client_map
+                .get(&id)
+                .and_then(|c| self.workspaces.get(c.workspace()))
+                .into_iter()
+                .collect()
+        } else {
+            self.workspaces.all_elements(&selector)
+        }
+    }
+
+    /// Get a vector of mutable references to Workspaces satisfying 'selector'. WinId selectors will 
+    /// return a vector with the workspace containing that Client if the client is known. Otherwise 
+    /// an empty vector will be returned.
+    pub fn all_workspaces_mut(&mut self, selector: &Selector<Workspace>) -> Vec<&mut Workspace> {
+        if let Selector::WinId(id) = selector {
+            let wix = match self.client_map.get(&id).map(|c| c.workspace()) {
+                Some(i) => i,
+                None => return vec![],
+            };
+            self.workspaces.get_mut(wix).into_iter().collect()
+        } else {
+            self.workspaces.all_elements_mut(&selector)
+        }
+    }
+
     /// Set the name of the selected Workspace
     pub fn set_workspace_name(&mut self, name: impl Into<String>, selector: Selector<Workspace>) {
         self.workspaces
@@ -709,7 +749,8 @@ impl<'a> WindowManager<'a> {
             Selector::Index(i) => self
                 .workspaces
                 .get(self.active_ws_index())
-                .and_then(|ws| ws.iter().nth(*i).and_then(|id| self.client_map.get(id))),
+                .and_then(|ws| ws.iter().nth(*i))
+                .and_then(|id| self.client_map.get(id)),
         }
     }
 
@@ -731,6 +772,51 @@ impl<'a> WindowManager<'a> {
                 Some(id) => self.client_map.get_mut(id),
                 None => None,
             },
+        }
+    }
+
+    /// Get a vector of references to the Clients found matching 'selector'
+    pub fn all_clients(&self, selector: &Selector<Client>) -> Vec<&Client> {
+        match selector {
+            Selector::Focused => self.focused_client().into_iter().collect(),
+            Selector::WinId(id) => self.client_map.get(&id).into_iter().collect(),
+            Selector::Condition(f) => self
+                .client_map
+                .iter()
+                .filter(|(_, v)| f(v))
+                .map(|(_, v)| v)
+                .collect(),
+            Selector::Index(i) => self
+                .workspaces
+                .get(self.active_ws_index())
+                .and_then(|ws| ws.iter().nth(*i))
+                .and_then(|id| self.client_map.get(id))
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    /// Get a vector of mutable references to the Clients found matching 'selector'
+    pub fn all_clients_mut(&mut self, selector: &Selector<Client>) -> Vec<&mut Client> {
+        match selector {
+            Selector::Focused => self.focused_client_mut().into_iter().collect(),
+            Selector::WinId(id) => self.client_map.get_mut(&id).into_iter().collect(),
+            Selector::Condition(f) => self
+                .client_map
+                .iter_mut()
+                .filter(|(_, v)| f(v))
+                .map(|(_, v)| v)
+                .collect(),
+            Selector::Index(i) => match self
+                .workspaces
+                .get(self.active_ws_index())
+                .and_then(|ws| ws.iter().nth(*i))
+            {
+                Some(id) => self.client_map.get_mut(id)
+                    .into_iter()
+                    .collect(),
+                None => vec![],
+            }
         }
     }
 

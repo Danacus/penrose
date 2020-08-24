@@ -349,6 +349,24 @@ impl<T> Ring<T> {
         }
     }
 
+    pub fn all_elements(&self, s: &Selector<T>) -> Vec<&T> {
+        match s {
+            Selector::WinId(_) => vec![], // ignored
+            Selector::Focused => self.focused().into_iter().collect(),
+            Selector::Index(i) => self.elements.get(*i).into_iter().collect(),
+            Selector::Condition(f) => self.elements.iter().filter(|e| f(*e)).collect(),
+        }
+    }
+    
+    pub fn all_elements_mut(&mut self, s: &Selector<T>) -> Vec<&mut T> {
+        match s {
+            Selector::WinId(_) => vec![], // ignored
+            Selector::Focused => self.focused_mut().into_iter().collect(),
+            Selector::Index(i) => self.elements.get_mut(*i).into_iter().collect(),
+            Selector::Condition(f) => self.elements.iter_mut().filter(|e| f(*e)).collect(),
+        }
+    }
+
     pub fn focus(&mut self, s: &Selector<T>) -> Option<&T> {
         match s {
             Selector::WinId(_) => None, // ignored
