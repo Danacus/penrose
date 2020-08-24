@@ -10,7 +10,7 @@
 extern crate penrose;
 
 use penrose::client::Client;
-use penrose::data_types::ColorScheme;
+use penrose::data_types::{ColorScheme, FireAndForget, Selector};
 use penrose::hooks::Hook;
 use penrose::layout::{bottom_stack, side_stack, Layout, LayoutConf};
 use penrose::{Backward, Config, Forward, Less, More, WindowManager, XcbConnection};
@@ -30,6 +30,15 @@ impl Hook for MyClientHook {
     }
 }
 
+fn set_fullscreen() -> FireAndForget {
+    Box::new(move |wm: &mut WindowManager| {
+        if let Some(client) = wm.client(Selector::Focused) {
+            let region = wm.screen_size(wm.active_screen_index());
+            wm.position_client(client.id(), region);
+        }
+    })
+}
+
 fn main() {
     // penrose will log useful information about the current state of the WindowManager during
     // normal operation that can be used to drive scripts and related programs. Additional debug
@@ -44,7 +53,7 @@ fn main() {
     config.workspaces = &["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
     // Windows with a matching WM_CLASS will always float
-    config.floating_classes = &["dmenu", "dunst", "polybar"];
+    config.floating_classes = &["dmenu", "dunst", "polybar", "rofi"];
 
     // Only the highlight color is currently used (window borders). Work is planned for an embedded
     // task bar and systray which will make use of the other colors
@@ -83,9 +92,9 @@ fn main() {
     ];
 
     // NOTE: change these to programs that you have installed!
-    let my_program_launcher = "dmenu_run";
-    let my_file_manager = "thunar";
-    let my_terminal = "st";
+    let my_program_launcher = "rofi -show drun";
+    let my_file_manager = "dolphin";
+    let my_terminal = "alacritty";
 
     /* hooks
      *
@@ -115,7 +124,7 @@ fn main() {
     // Scratchpad is an extension: it makes use of the same Hook points as the examples above but
     // additionally provides a 'toggle' method that can be bound to a key combination in order to
     // trigger the bound scratchpad client.
-    let sp = Scratchpad::new("st", 0.8, 0.8);
+    let sp = Scratchpad::new("alacritty", 0.8, 0.8);
     sp.register(&mut config);
 
     /* The gen_keybindings macro parses user friendly key binding definitions into X keycodes and
@@ -129,9 +138,9 @@ fn main() {
      */
     let key_bindings = gen_keybindings! {
         // Program launch
-        "M-semicolon" => run_external!(my_program_launcher),
+        "M-d" => run_external!(my_program_launcher),
         "M-Return" => run_external!(my_terminal),
-        "M-f" => run_external!(my_file_manager),
+        "M-f" => set_fullscreen(),
 
         // client management
         "M-j" => run_internal!(cycle_client, Forward),
@@ -179,6 +188,7 @@ fn main() {
     // such as configuring initial WindowManager state, running custom code / hooks or spawning
     // external processes such as a start-up script.
     let mut wm = WindowManager::init(config, &conn);
+    wm.log("Hello World!");
 
     // grab_keys_and_run will start listening to events from the X server and drop into the main
     // event loop. From this point on, program control passes to the WindowManager so make sure

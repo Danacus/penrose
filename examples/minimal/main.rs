@@ -10,10 +10,11 @@ extern crate penrose;
 use penrose::{Backward, Config, Forward, Less, More, WindowManager, XcbConnection};
 
 fn main() {
+    println!("hello");
     let config = Config::default();
     let key_bindings = gen_keybindings! {
-        "M-semicolon" => run_external!("dmenu_run"),
-        "M-Return" => run_external!("st"),
+        "M-semicolon" => run_external!("rofi -show drun"),
+        "M-Return" => run_external!("alacritty"),
         "M-j" => run_internal!(cycle_client, Forward),
         "M-k" => run_internal!(cycle_client, Backward),
         "M-S-j" => run_internal!(drag_client, Forward),
@@ -40,5 +41,6 @@ fn main() {
 
     let conn = XcbConnection::new();
     let mut wm = WindowManager::init(config, &conn);
+    println!("init done");
     wm.grab_keys_and_run(key_bindings);
 }
