@@ -1,10 +1,12 @@
-use penrose::client::Client;
-use penrose::data_types::WinId;
-use penrose::hooks::Hook;
-use penrose::xconnection::{MockXConn, XEvent};
-use penrose::{Config, WindowManager};
-use std::cell::RefCell;
-use std::rc::Rc;
+use penrose::{
+    client::Client,
+    data_types::WinId,
+    hooks::Hook,
+    xconnection::{MockXConn, XEvent},
+    {Config, WindowManager},
+};
+
+use std::{cell::RefCell, rc::Rc};
 
 mod common;
 
@@ -17,7 +19,7 @@ impl TestHook {
     fn mark_called(&mut self, method: &str) {
         self.calls.replace_with(|cs| {
             if method == self.method {
-                cs.push(self.name.into());
+                cs.push(format!("{}:{}", self.name, method));
             }
             cs.to_vec()
         });
@@ -33,6 +35,14 @@ impl Hook for TestHook {
         self.mark_called("remove_client");
     }
 
+    fn client_name_updated(&mut self, _: &mut WindowManager, _: WinId, _: &str, _: bool) {
+        self.mark_called("client_name_updated");
+    }
+
+    fn layout_applied(&mut self, _: &mut WindowManager, _: usize, _: usize) {
+        self.mark_called("layout_applied");
+    }
+
     fn layout_change(&mut self, _: &mut WindowManager, _: usize, _: usize) {
         self.mark_called("layout_change");
     }
@@ -41,12 +51,24 @@ impl Hook for TestHook {
         self.mark_called("workspace_change");
     }
 
+    fn workspaces_updated(&mut self, _: &mut WindowManager, _: &Vec<&str>, _: usize) {
+        self.mark_called("workspaces_updated");
+    }
+
     fn screen_change(&mut self, _: &mut WindowManager, _: usize) {
         self.mark_called("screen_change");
     }
 
     fn focus_change(&mut self, _: &mut WindowManager, _: WinId) {
         self.mark_called("focus_change");
+    }
+
+    fn startup(&mut self, _: &mut WindowManager) {
+        self.mark_called("startup");
+    }
+
+    fn event_handled(&mut self, _: &mut WindowManager) {
+        self.mark_called("event_handled");
     }
 }
 
@@ -85,7 +107,10 @@ macro_rules! hook_test(
 
             assert_eq!(
                 Rc::try_unwrap(calls).unwrap().into_inner(),
-                ["hook_1", "hook_2"].repeat($n)
+                [
+                    format!("{}:{}", "hook_1", $method).as_str(),
+                    format!("{}:{}", "hook_2", $method).as_str()
+                ].repeat($n)
             );
         }
     };
@@ -95,7 +120,7 @@ hook_test!(
     expected_calls => 1,
     "new_client",
     test_new_client_hooks,
-    vec![XEvent::Map {
+    vec![XEvent::MapRequest {
         id: 1,
         ignore: false
     }]
@@ -106,7 +131,7 @@ hook_test!(
     "remove_client",
     test_remove_client_hooks,
     vec![
-        XEvent::Map {
+        XEvent::MapRequest {
             id: 1,
             ignore: false
         },
@@ -117,20 +142,58 @@ hook_test!(
 );
 
 hook_test!(
-    expected_calls => 2, // Initial layout application and then due to the change
-    "layout_change",
-    test_layout_hooks,
+    expected_calls => 2,
+    "client_name_updated",
+    test_client_name_update_hooks,
+    vec![
+        XEvent::PropertyNotify {
+            id: 1,
+            atom: "WM_NAME".to_string(),
+            is_root: false
+        },
+        XEvent::PropertyNotify {
+            id: 1,
+            atom: "_NET_WM_NAME".to_string(),
+            is_root: false
+        },
+    ]
+);
+
+hook_test!(
+    expected_calls => 3, // Initial layout application for each screen and then due to the change
+    "layout_applied",
+    test_layout_applied_hooks,
     vec![XEvent::KeyPress {
         code: common::LAYOUT_CHANGE_CODE
-    }]
+    },
+    ]
+);
+
+hook_test!(
+    expected_calls => 1,
+    "layout_change",
+    test_layout_change_hooks,
+    vec![XEvent::KeyPress {
+        code: common::LAYOUT_CHANGE_CODE
+    },
+    ]
 );
 
 hook_test!(
     expected_calls => 1,
     "workspace_change",
-    test_workspace_hooks,
+    test_workspace_change_hooks,
     vec![XEvent::KeyPress {
         code: common::WORKSPACE_CHANGE_CODE
+    }]
+);
+
+hook_test!(
+    expected_calls => 1,
+    "workspaces_updated",
+    test_workspace_update_hooks,
+    vec![XEvent::KeyPress {
+        code: common::ADD_WORKSPACE_CODE
     }]
 );
 
@@ -148,11 +211,11 @@ hook_test!(
     "focus_change",
     test_focus_hooks,
     vec![
-        XEvent::Map {
+        XEvent::MapRequest {
             id: 1,
             ignore: false
         },
-        XEvent::Map {
+        XEvent::MapRequest {
             id: 2,
             ignore: false
         },
@@ -160,4 +223,18 @@ hook_test!(
             code: common::FOCUS_CHANGE_CODE
         }
     ]
+);
+
+hook_test!(
+    expected_calls => 1,
+    "startup",
+    test_startup_hooks,
+    vec![]
+);
+
+hook_test!(
+    expected_calls => 2, // one from startup events, and the second from screen change
+    "event_handled",
+    test_event_handled_hooks,
+    vec![XEvent::ScreenChange]
 );

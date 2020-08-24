@@ -31,7 +31,9 @@ fn main() {
         "M-A-Down" => run_internal!(update_max_main, Less),
         "M-A-Right" => run_internal!(update_main_ratio, More),
         "M-A-Left" => run_internal!(update_main_ratio, Less),
-        "M-A-Escape" => run_internal!(exit);
+        "M-A-Escape" => run_internal!(exit),
+        "M-semicolon" => run_external!("dmenu_run"),
+        "M-Return" => run_external!("st");
 
         forall_workspaces: config.workspaces => {
             "M-{}" => focus_workspace,
@@ -39,7 +41,7 @@ fn main() {
         }
     };
 
-    let conn = XcbConnection::new();
+    let conn = XcbConnection::new().unwrap();
     let mut wm = WindowManager::init(config, &conn);
     println!("init done");
     wm.grab_keys_and_run(key_bindings);

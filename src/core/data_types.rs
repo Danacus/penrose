@@ -1,9 +1,15 @@
 //! Simple data types and enums
-use crate::hooks;
-use crate::layout::{side_stack, Layout, LayoutConf};
-use crate::manager::WindowManager;
-use std::collections::{HashMap, VecDeque};
-use std::ops;
+use crate::{
+    hooks,
+    layout::{side_stack, Layout, LayoutConf},
+    manager::WindowManager,
+};
+
+use std::{
+    collections::{HashMap, VecDeque},
+    ops,
+};
+
 use xcb;
 
 /// Some action to be run by a user key binding
@@ -13,7 +19,7 @@ pub type FireAndForget = Box<dyn FnMut(&mut WindowManager) -> ()>;
 pub type KeyBindings = HashMap<KeyCode, FireAndForget>;
 
 /// Output of a Layout function: the new position a window should take
-pub type ResizeAction = (WinId, Region);
+pub type ResizeAction = (WinId, Option<Region>);
 
 /// Map xmodmap key names to their X key code so that we can bind them by name
 pub type CodeMap = HashMap<String, u8>;
@@ -24,62 +30,65 @@ pub type WinId = u32;
 /// An x,y coordinate pair
 #[derive(Debug, Copy, Clone)]
 pub struct Point {
+    /// An absolute x coordinate relative to the root window
     pub x: u32,
+    /// An absolute y coordinate relative to the root window
     pub y: u32,
 }
 
 impl Point {
+    /// Create a new Point.
     pub fn new(x: u32, y: u32) -> Point {
         Point { x, y }
     }
 }
 
 /// The main user facing configuration details
-pub struct Config {
-    pub workspaces: &'static [&'static str],
-    pub fonts: &'static [&'static str],
+pub struct Config<'a> {
+    /// Default workspace names to use when initialising the WindowManager. Must have at least one element.
+    pub workspaces: Vec<&'a str>,
+    /// WM_CLASS values that should always be treated as floating.
     pub floating_classes: &'static [&'static str],
+    /// Default Layouts to be given to every workspace.
     pub layouts: Vec<Layout>,
-    pub color_scheme: ColorScheme,
+    /// Focused boder color
+    pub focused_border: u32,
+    /// Unfocused boder color
+    pub unfocused_border: u32,
+    /// The width of window borders in pixels
     pub border_px: u32,
+    /// The size of gaps between windows in pixels.
     pub gap_px: u32,
+    /// The percentage change in main_ratio to be applied when increasing / decreasing.
     pub main_ratio_step: f32,
-    pub systray_spacing_px: u32,
-    pub show_systray: bool,
+    /// Whether or not space should be reserved for a status bar
     pub show_bar: bool,
+    /// True if the status bar should be at the top of the screen, false if it should be at the bottom
     pub top_bar: bool,
+    /// Height of space reserved for status bars in pixels
     pub bar_height: u32,
-    pub respect_resize_hints: bool,
+    /// User supplied Hooks for modifying WindowManager behaviour
     pub hooks: Vec<Box<dyn hooks::Hook>>,
 }
 
-impl Config {
-    pub fn default() -> Config {
+impl<'a> Config<'a> {
+    /// Initialise a default Config, giving sensible (but minimal) values for all fields.
+    pub fn default() -> Config<'a> {
         Config {
-            workspaces: &["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            workspaces: vec!["1", "2", "3", "4", "5", "6", "7", "8", "9"],
             floating_classes: &["dmenu", "dunst"],
-            fonts: &["mono"],
             layouts: vec![
                 Layout::new("[side]", LayoutConf::default(), side_stack, 1, 0.6),
                 Layout::floating("[----]"),
             ],
-            color_scheme: ColorScheme {
-                bg: 0x282828,        // #282828
-                fg_1: 0x3c3836,      // #3c3836
-                fg_2: 0xa89984,      // #a89984
-                fg_3: 0xf2e5bc,      // #f2e5bc
-                highlight: 0xcc241d, // #cc241d
-                urgent: 0x458588,    // #458588
-            },
+            focused_border: 0xcc241d,   // #cc241d
+            unfocused_border: 0x3c3836, // #3c3836
             border_px: 2,
             gap_px: 5,
             main_ratio_step: 0.05,
-            systray_spacing_px: 2,
-            show_systray: true,
             show_bar: true,
             top_bar: true,
             bar_height: 18,
-            respect_resize_hints: true,
             hooks: vec![],
         }
     }
@@ -97,6 +106,7 @@ pub enum Direction {
 }
 
 impl Direction {
+    /// Invert this Direction
     pub fn reverse(&self) -> Direction {
         match self {
             Direction::Forward => Direction::Backward,
@@ -135,42 +145,28 @@ pub struct Region {
 }
 
 impl Region {
+    /// Create a new Region.
     pub fn new(x: u32, y: u32, w: u32, h: u32) -> Region {
         Region { x, y, w, h }
     }
 
-    pub fn width(&self) -> u32 {
-        self.w
-    }
-
-    pub fn height(&self) -> u32 {
-        self.h
-    }
-
+    /// Destructure this Region into its component values (x, y, w, h).
     pub fn values(&self) -> (u32, u32, u32, u32) {
         (self.x, self.y, self.w, self.h)
     }
 }
 
-/// A set of named color codes
-#[derive(Debug, Clone, Copy)]
-pub struct ColorScheme {
-    pub bg: u32,
-    pub fg_1: u32,
-    pub fg_2: u32,
-    pub fg_3: u32,
-    pub highlight: u32,
-    pub urgent: u32,
-}
-
 /// An X key-code along with a modifier mask
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct KeyCode {
+    /// Modifier key bit mask
     pub mask: u16,
+    /// X key code
     pub code: u8,
 }
 
 impl KeyCode {
+    /// Build a new KeyCode from an XCB KeyPressEvent
     pub fn from_key_press(k: &xcb::KeyPressEvent) -> KeyCode {
         KeyCode {
             mask: k.state(),
@@ -181,10 +177,15 @@ impl KeyCode {
 
 /// Used with WindowManager helper functions to select an element from the
 /// known workspaces or clients.
+#[derive(Clone, Copy)]
 pub enum Selector<'a, T> {
+    /// The focused element of the target collection.
     Focused,
+    /// The element at this index.
     Index(usize),
+    /// The element with/containing this client ID.
     WinId(WinId),
+    /// The first element satisfying this condition.
     Condition(&'a dyn Fn(&T) -> bool),
 }
 
@@ -195,7 +196,7 @@ pub enum Selector<'a, T> {
  * Supports rotating the position of the elements and rotating which element
  * is focused independently of one another.
  */
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Ring<T> {
     elements: VecDeque<T>,
     focused: usize,
@@ -281,8 +282,24 @@ impl<T> Ring<T> {
         self.elements.insert(index, element);
     }
 
+    pub fn push(&mut self, element: T) {
+        self.elements.push_back(element);
+    }
+
     pub fn iter(&self) -> std::collections::vec_deque::Iter<T> {
         self.elements.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<T> {
+        self.elements.iter_mut()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        self.elements.get(index)
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        self.elements.get_mut(index)
     }
 
     fn clamp_focus(&mut self) {
@@ -299,30 +316,45 @@ impl<T> Ring<T> {
         self.elements.iter_mut().enumerate().find(|(_, e)| cond(*e))
     }
 
-    pub fn element(&self, s: Selector<T>) -> Option<&T> {
+    pub fn index(&self, s: &Selector<T>) -> Option<usize> {
+        match s {
+            Selector::WinId(_) => None, // ignored
+            Selector::Focused => Some(self.focused_index()),
+            Selector::Index(i) => {
+                if *i < self.len() {
+                    Some(*i)
+                } else {
+                    None
+                }
+            }
+            Selector::Condition(f) => self.element_by(f).map(|(i, _)| i),
+        }
+    }
+
+    pub fn element(&self, s: &Selector<T>) -> Option<&T> {
         match s {
             Selector::WinId(_) => None, // ignored
             Selector::Focused => self.focused(),
-            Selector::Index(i) => self.elements.get(i),
+            Selector::Index(i) => self.elements.get(*i),
             Selector::Condition(f) => self.element_by(f).map(|(_, e)| e),
         }
     }
 
-    pub fn element_mut(&mut self, s: Selector<T>) -> Option<&mut T> {
+    pub fn element_mut(&mut self, s: &Selector<T>) -> Option<&mut T> {
         match s {
             Selector::Focused => self.focused_mut(),
-            Selector::Index(i) => self.elements.get_mut(i),
+            Selector::Index(i) => self.elements.get_mut(*i),
             Selector::WinId(_) => None, // ignored
             Selector::Condition(f) => self.element_by_mut(f).map(|(_, e)| e),
         }
     }
 
-    pub fn focus(&mut self, s: Selector<T>) -> Option<&T> {
+    pub fn focus(&mut self, s: &Selector<T>) -> Option<&T> {
         match s {
             Selector::WinId(_) => None, // ignored
             Selector::Focused => self.focused(),
             Selector::Index(i) => {
-                self.focused = i;
+                self.focused = *i;
                 self.focused()
             }
             Selector::Condition(f) => {
@@ -336,7 +368,7 @@ impl<T> Ring<T> {
         }
     }
 
-    pub fn remove(&mut self, s: Selector<T>) -> Option<T> {
+    pub fn remove(&mut self, s: &Selector<T>) -> Option<T> {
         match s {
             Selector::WinId(_) => None, // ignored
             Selector::Focused => {
@@ -345,7 +377,7 @@ impl<T> Ring<T> {
                 return c;
             }
             Selector::Index(i) => {
-                let c = self.elements.remove(i);
+                let c = self.elements.remove(*i);
                 self.clamp_focus();
                 return c;
             }
@@ -358,6 +390,15 @@ impl<T> Ring<T> {
                     None
                 }
             }
+        }
+    }
+}
+
+impl<T: PartialEq> Ring<T> {
+    pub fn equivalent_selectors(&self, s: &Selector<T>, t: &Selector<T>) -> bool {
+        match (self.element(&s), self.element(&t)) {
+            (Some(e), Some(f)) => e == f,
+            _ => false,
         }
     }
 }
@@ -445,14 +486,21 @@ mod tests {
         let mut r = Ring::new(vec![1, 2, 3]);
         r.focused = 2;
         assert_eq!(r.focused(), Some(&3));
-        assert_eq!(r.remove(Selector::Focused), Some(3));
+        assert_eq!(r.remove(&Selector::Focused), Some(3));
         assert_eq!(r.focused_index(), 1);
         assert_eq!(r.focused(), Some(&2));
-        assert_eq!(r.remove(Selector::Focused), Some(2));
+        assert_eq!(r.remove(&Selector::Focused), Some(2));
         assert_eq!(r.focused(), Some(&1));
-        assert_eq!(r.remove(Selector::Focused), Some(1));
+        assert_eq!(r.remove(&Selector::Focused), Some(1));
         assert_eq!(r.focused(), None);
-        assert_eq!(r.remove(Selector::Focused), None);
+        assert_eq!(r.remove(&Selector::Focused), None);
+    }
+
+    #[test]
+    fn indices_are_in_bounds() {
+        let r = Ring::new(vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(r.index(&Selector::Index(2)), Some(2));
+        assert_eq!(r.index(&Selector::Index(42)), None);
     }
 
     #[test]
@@ -460,15 +508,15 @@ mod tests {
         let mut r = Ring::new(vec![1, 2, 3, 4, 5, 6]);
         r.focused = 3;
         assert_eq!(r.focused(), Some(&4));
-        assert_eq!(r.remove(Selector::Condition(&|e| e % 2 == 0)), Some(2));
+        assert_eq!(r.remove(&Selector::Condition(&|e| e % 2 == 0)), Some(2));
         assert_eq!(r.focused(), Some(&5));
     }
 
     #[test]
     fn focus_by() {
         let mut r = Ring::new(vec![1, 2, 3, 4, 5, 6]);
-        assert_eq!(r.focus(Selector::Condition(&|e| e % 2 == 0)), Some(&2));
-        assert_eq!(r.focus(Selector::Condition(&|e| e % 7 == 0)), None);
+        assert_eq!(r.focus(&Selector::Condition(&|e| e % 2 == 0)), Some(&2));
+        assert_eq!(r.focus(&Selector::Condition(&|e| e % 7 == 0)), None);
     }
 
     #[test]

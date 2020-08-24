@@ -1,7 +1,5 @@
 //! A tiling window manager in the style of Xmonad
-// TODO: enable these once we are stable enough
-// #![warn(missing_debug_implementations)]
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 
 #[macro_use]
 extern crate log;
@@ -10,6 +8,9 @@ extern crate log;
 pub mod core;
 
 pub mod contrib;
+
+#[cfg(feature = "draw")]
+pub mod draw;
 
 // top level re-exports
 pub use crate::core::client;
@@ -25,3 +26,8 @@ pub use crate::core::xconnection;
 pub use data_types::{Change::*, Config, Direction::*};
 pub use manager::WindowManager;
 pub use xconnection::XcbConnection;
+
+use anyhow;
+
+/// A default 'anyhow' based result type
+pub type Result<T> = anyhow::Result<T>;

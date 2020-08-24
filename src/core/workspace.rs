@@ -1,7 +1,10 @@
 //! A Workspace is a set of displayed clients and a set of Layouts for arranging them
-use crate::client::Client;
-use crate::data_types::{Change, Direction, Region, ResizeAction, Ring, Selector, WinId};
-use crate::layout::{Layout, LayoutConf};
+use crate::{
+    client::Client,
+    data_types::{Change, Direction, Region, ResizeAction, Ring, Selector, WinId},
+    layout::{Layout, LayoutConf},
+};
+
 use std::collections::HashMap;
 
 /**
@@ -14,21 +17,22 @@ use std::collections::HashMap;
  * point of view of the X server by checking focus at the Workspace level
  * whenever a new Workspace becomes active.
  */
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Workspace {
-    name: &'static str,
+    name: String,
     clients: Ring<WinId>,
     layouts: Ring<Layout>,
 }
 
 impl Workspace {
-    pub fn new(name: &'static str, layouts: Vec<Layout>) -> Workspace {
+    /// Construct a new Workspace with the given name and choice of Layouts
+    pub fn new(name: impl Into<String>, layouts: Vec<Layout>) -> Workspace {
         if layouts.len() == 0 {
-            panic!("{}: require at least one layout function", name);
+            panic!("{}: require at least one layout function", name.into());
         }
 
         Workspace {
-            name,
+            name: name.into(),
             clients: Ring::new(Vec::new()),
             layouts: Ring::new(layouts),
         }
@@ -36,7 +40,11 @@ impl Workspace {
 
     /// The name of this workspace
     pub fn name(&self) -> &str {
-        self.name
+        &self.name
+    }
+
+    pub(crate) fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
     }
 
     /// The number of clients currently on this workspace
@@ -47,6 +55,15 @@ impl Workspace {
     /// Iterate over the clients on this workspace in position order
     pub fn iter(&self) -> std::collections::vec_deque::Iter<WinId> {
         self.clients.iter()
+    }
+
+    /// Iterate over the clients on this workspace in position order
+    pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<WinId> {
+        self.clients.iter_mut()
+    }
+
+    pub(crate) fn clients(&self) -> Vec<WinId> {
+        self.clients.as_vec()
     }
 
     /// A reference to the currently focused client if there is one
@@ -62,30 +79,29 @@ impl Workspace {
     /// Focus the client with the given id, returns an option of the previously focused
     /// client if there was one
     pub fn focus_client(&mut self, id: WinId) -> Option<WinId> {
-        if self.clients.len() == 0 {
-            return None;
-        }
-
-        let prev = self.clients.focused().unwrap().clone();
-        self.clients.focus(Selector::Condition(&|c| *c == id));
+        let prev = match self.clients.focused() {
+            Some(c) => *c,
+            None => return None,
+        };
+        self.clients.focus(&Selector::Condition(&|c| *c == id));
         Some(prev)
     }
 
     /// Remove a target client, retaining focus at the same position in the stack.
     /// Returns the removed client if there was one to remove.
     pub fn remove_client(&mut self, id: WinId) -> Option<WinId> {
-        self.clients.remove(Selector::Condition(&|c| *c == id))
+        self.clients.remove(&Selector::Condition(&|c| *c == id))
     }
 
     /// Remove the currently focused client, keeping focus at the same position in the stack.
     /// Returns the removed client if there was one to remove.
     pub fn remove_focused_client(&mut self) -> Option<WinId> {
-        self.clients.remove(Selector::Focused)
+        self.clients.remove(&Selector::Focused)
     }
 
     /// Run the current layout function, generating a list of resize actions to be
     /// applied byt the window manager.
-    pub fn arrange(
+    pub(crate) fn arrange(
         &self,
         screen_region: Region,
         client_map: &HashMap<WinId, Client>,
@@ -109,9 +125,11 @@ impl Workspace {
         }
     }
 
+    /// Set the active layout by symbol name if it is available. Returns a reference to active
+    /// layout if it was able to be set.
     pub fn try_set_layout(&mut self, symbol: &str) -> Option<&Layout> {
         self.layouts
-            .focus(Selector::Condition(&|l| l.symbol == symbol))
+            .focus(&Selector::Condition(&|l| l.symbol == symbol))
     }
 
     /// Cycle through the available layouts on this workspace
@@ -138,8 +156,8 @@ impl Workspace {
         if self.clients.len() < 2 {
             return None; // need at least two clients to cycle
         }
-        if self.layout_conf().follow_focus && self.clients.would_wrap(direction) {
-            return None; // When following focus, don't allow wrapping focus
+        if !self.layout_conf().allow_wrapping && self.clients.would_wrap(direction) {
+            return None;
         }
 
         let prev = *self.clients.focused()?;
@@ -156,18 +174,20 @@ impl Workspace {
      * Drag the focused client through the stack, retaining focus
      */
     pub fn drag_client(&mut self, direction: Direction) -> Option<WinId> {
-        if self.layout_conf().follow_focus && self.clients.would_wrap(direction) {
-            return None; // When following focus, don't allow wrapping focus
+        if !self.layout_conf().allow_wrapping && self.clients.would_wrap(direction) {
+            return None;
         }
         self.clients.drag_focused(direction).map(|c| *c)
     }
 
+    /// Increase or decrease the number of possible clients in the main area of the current Layout
     pub fn update_max_main(&mut self, change: Change) {
         if let Some(layout) = self.layouts.focused_mut() {
             layout.update_max_main(change);
         }
     }
 
+    /// Increase or decrease the size of the main area for the current Layout
     pub fn update_main_ratio(&mut self, change: Change, step: f32) {
         if let Some(layout) = self.layouts.focused_mut() {
             layout.update_main_ratio(change, step);

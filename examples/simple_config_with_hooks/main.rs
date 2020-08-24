@@ -9,15 +9,17 @@
 #[macro_use]
 extern crate penrose;
 
-use penrose::client::Client;
-use penrose::data_types::{ColorScheme, FireAndForget, Selector};
-use penrose::hooks::Hook;
-use penrose::layout::{bottom_stack, side_stack, Layout, LayoutConf};
-use penrose::{Backward, Config, Forward, Less, More, WindowManager, XcbConnection};
-
-use penrose::contrib::extensions::Scratchpad;
-use penrose::contrib::hooks::{DefaultWorkspace, LayoutSymbolAsRootName};
-use penrose::contrib::layouts::paper;
+use penrose::{
+    client::Client,
+    contrib::{
+        extensions::Scratchpad,
+        hooks::{DefaultWorkspace, LayoutSymbolAsRootName},
+        layouts::paper,
+    },
+    hooks::Hook,
+    layout::{bottom_stack, side_stack, Layout, LayoutConf},
+    Backward, Config, Forward, Less, More, WindowManager, XcbConnection,
+};
 
 use simplelog::{LevelFilter, SimpleLogger};
 
@@ -28,15 +30,6 @@ impl Hook for MyClientHook {
     fn new_client(&mut self, wm: &mut WindowManager, c: &mut Client) {
         wm.log(&format!("new client with WM_CLASS='{}'", c.wm_class()));
     }
-}
-
-fn set_fullscreen() -> FireAndForget {
-    Box::new(move |wm: &mut WindowManager| {
-        if let Some(client) = wm.client(Selector::Focused) {
-            let region = wm.screen_size(wm.active_screen_index());
-            wm.position_client(client.id(), region);
-        }
-    })
 }
 
 fn main() {
@@ -50,21 +43,14 @@ fn main() {
     let mut config = Config::default();
 
     // Created at startup. See keybindings below for how to access them
-    config.workspaces = &["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    config.workspaces = vec!["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
     // Windows with a matching WM_CLASS will always float
     config.floating_classes = &["dmenu", "dunst", "polybar", "rofi"];
 
-    // Only the highlight color is currently used (window borders). Work is planned for an embedded
-    // task bar and systray which will make use of the other colors
-    config.color_scheme = ColorScheme {
-        bg: 0x282828,        // #282828
-        fg_1: 0x3c3836,      // #3c3836
-        fg_2: 0xa89984,      // #a89984
-        fg_3: 0xf2e5bc,      // #f2e5bc
-        highlight: 0xcc241d, // #cc241d
-        urgent: 0x458588,    // #458588
-    };
+    // Client border colors are set based on X focus
+    config.focused_border = 0xcc241d; // #cc241d
+    config.unfocused_border = 0x3c3836; // #3c3836
 
     // When specifying a layout, most of the time you will want LayoutConf::default() as shown
     // below, which will honour gap settings and will not be run on focus changes (only when
@@ -74,6 +60,7 @@ fn main() {
         floating: false,
         gapless: true,
         follow_focus: true,
+        allow_wrapping: false,
     };
 
     // Defauly number of clients in the main layout area
@@ -140,7 +127,6 @@ fn main() {
         // Program launch
         "M-d" => run_external!(my_program_launcher),
         "M-Return" => run_external!(my_terminal),
-        "M-f" => set_fullscreen(),
 
         // client management
         "M-j" => run_internal!(cycle_client, Forward),
@@ -181,7 +167,7 @@ fn main() {
     // reference implementation of this trait that uses the XCB library to communicate with the X
     // server. You are free to provide your own implementation if you wish, see xconnection.rs for
     // details of the required methods and expected behaviour.
-    let conn = XcbConnection::new();
+    let conn = XcbConnection::new().unwrap();
 
     // Create the WindowManager instance with the config we have built and a connection to the X
     // server. Before calling grab_keys_and_run, it is possible to run additional start-up actions

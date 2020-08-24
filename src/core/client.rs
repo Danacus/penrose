@@ -16,6 +16,8 @@ pub struct Client {
     // state flags
     floating: bool,
     fullscreen: bool,
+    pub(crate) mapped: bool,
+    pub(crate) wm_managed: bool,
 }
 
 impl Client {
@@ -34,6 +36,8 @@ impl Client {
             workspace,
             floating: floating,
             fullscreen: false,
+            mapped: false,
+            wm_managed: true,
         }
     }
 
@@ -62,8 +66,22 @@ impl Client {
         self.workspace = workspace
     }
 
+    pub(crate) fn set_name(&mut self, name: impl Into<String>) {
+        self.wm_name = name.into()
+    }
+
     /// The WM_CLASS of the window that this Client is tracking
     pub fn class(&self) -> &str {
         &self.wm_class
+    }
+
+    /// Mark this client as not being managed by the WindowManager directly
+    pub fn externally_managed(&mut self) {
+        self.wm_managed = false;
+    }
+
+    /// Mark this client as being managed by the WindowManager directly
+    pub fn internally_managed(&mut self) {
+        self.wm_managed = true;
     }
 }

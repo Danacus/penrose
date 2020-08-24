@@ -9,9 +9,12 @@
  * that clients.len() > 0. r is the monitor Region defining the size of the monitor
  * for the layout to position windows.
  */
-use crate::client::Client;
-use crate::data_types::{Change, Region, ResizeAction, WinId};
-use std::fmt;
+use crate::{
+    client::Client,
+    data_types::{Change, Region, ResizeAction, WinId},
+};
+
+use std::{cmp, fmt};
 
 /**
  * When and how a Layout should be applied.
@@ -24,6 +27,8 @@ pub struct LayoutConf {
     pub gapless: bool,
     /// Should this layout be triggered by window focus as well as add/remove client
     pub follow_focus: bool,
+    /// Should cycling clients wrap at the first and last client?
+    pub allow_wrapping: bool,
 }
 
 impl LayoutConf {
@@ -34,6 +39,7 @@ impl LayoutConf {
             floating: false,
             gapless: false,
             follow_focus: false,
+            allow_wrapping: true,
         }
     }
 }
@@ -63,13 +69,21 @@ pub type LayoutFunc = fn(&[&Client], Option<WinId>, &Region, u32, f32) -> Vec<Re
  */
 #[derive(Clone, Copy)]
 pub struct Layout {
-    /// How this layout should be applied by the WindowManager
-    pub conf: LayoutConf,
-    /// User defined symbol for displaying in the status bar
-    pub symbol: &'static str,
+    pub(crate) conf: LayoutConf,
+    pub(crate) symbol: &'static str,
     max_main: u32,
     ratio: f32,
     f: LayoutFunc,
+}
+
+impl cmp::PartialEq<Layout> for Layout {
+    // Ignoring 'f'
+    fn eq(&self, other: &Layout) -> bool {
+        self.conf == other.conf
+            && self.symbol == other.symbol
+            && self.max_main == other.max_main
+            && self.ratio == other.ratio
+    }
 }
 
 impl fmt::Debug for Layout {
@@ -115,6 +129,7 @@ impl Layout {
                 floating: true,
                 gapless: false,
                 follow_focus: false,
+                allow_wrapping: true,
             },
             f: floating,
             max_main: 1,
@@ -199,7 +214,7 @@ pub(crate) fn mock_layout(
         .map(|(i, c)| {
             let (x, y, w, h) = r.values();
             let k = i as u32;
-            (c.id(), Region::new(x + k, y + k, w - k, h - k))
+            (c.id(), Some(Region::new(x + k, y + k, w - k, h - k)))
         })
         .collect()
 }
@@ -232,11 +247,11 @@ pub fn side_stack(
             let n = n as u32;
             if n < max_main {
                 let w = if n_stack == 0 { mw } else { split };
-                (c.id(), Region::new(mx, my + n * h_main, w, h_main))
+                (c.id(), Some(Region::new(mx, my + n * h_main, w, h_main)))
             } else {
                 let sn = n - max_main; // nth stacked client
                 let region = Region::new(mx + split, my + sn * h_stack, mw - split, h_stack);
-                (c.id(), region)
+                (c.id(), Some(region))
             }
         })
         .collect()
@@ -271,12 +286,41 @@ pub fn bottom_stack(
             let n = n as u32;
             if n < max_main {
                 let region = Region::new(mx, my + n * h_main / n_main, mw, h_main);
-                (c.id(), region)
+                (c.id(), Some(region))
             } else {
                 let sn = n - max_main; // nth stacked client
                 let region = Region::new(mx + sn * w_stack, my + split, w_stack, mh - split);
-                (c.id(), region)
+                (c.id(), Some(region))
             }
         })
         .collect()
+}
+
+/**
+ * A simple monolve layout that places uses the maximum available space for the focused client and
+ * unmaps all other windows.
+ */
+pub fn monocle(
+    clients: &[&Client],
+    focused: Option<WinId>,
+    monitor_region: &Region,
+    _: u32,
+    _: f32,
+) -> Vec<ResizeAction> {
+    if let Some(fid) = focused {
+        let (mx, my, mw, mh) = monitor_region.values();
+        clients
+            .iter()
+            .map(|c| {
+                let cid = c.id();
+                if cid == fid {
+                    (cid, Some(Region::new(mx, my, mw, mh)))
+                } else {
+                    (cid, None)
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    }
 }

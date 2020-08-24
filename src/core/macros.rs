@@ -20,13 +20,13 @@ macro_rules! run_internal(
     ($func:ident) => {
         Box::new(|wm: &mut $crate::manager::WindowManager| {
             wm.$func();
-        })
+        }) as $crate::data_types::FireAndForget
     };
 
     ($func:ident, $($arg:expr),+) => {
         Box::new(move |wm: &mut $crate::manager::WindowManager| {
             wm.$func($($arg),+);
-        })
+        }) as $crate::data_types::FireAndForget
     };
 );
 
@@ -49,7 +49,7 @@ macro_rules! map(
 macro_rules! gen_keybindings(
     {
         $($binding:expr => $action:expr),+;
-        forall_workspaces: $ws_array:expr => { $($ws_binding:expr => $ws_action:tt),+, }
+        $(forall_workspaces: $ws_array:expr => { $($ws_binding:expr => $ws_action:tt),+, })+
     } => {
         {
             let mut _map = ::std::collections::HashMap::new();
@@ -62,15 +62,21 @@ macro_rules! gen_keybindings(
                 };
             )+
 
-            for i in 0..$ws_array.len() {
+            $(for i in 0..$ws_array.len() {
                 $(
                     let for_ws = format!($ws_binding, i+1);
                     match $crate::helpers::parse_key_binding(for_ws.clone(), &keycodes) {
                         None => panic!("invalid key binding: {}", for_ws),
-                        Some(key_code) => _map.insert(key_code, run_internal!($ws_action, i)),
+                        Some(key_code) => _map.insert(
+                            key_code,
+                            run_internal!(
+                                $ws_action,
+                                &$crate::data_types::Selector::Index(i)
+                            )
+                        ),
                     };
                 )+
-            }
+            })+
 
             _map
         }

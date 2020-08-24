@@ -1,11 +1,13 @@
 //! A scratchpad that holds a single client
-use crate::core::client::Client;
-use crate::core::data_types::{Config, FireAndForget, Region, WinId};
-use crate::core::helpers::spawn;
-use crate::core::hooks::Hook;
-use crate::core::manager::WindowManager;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::core::{
+    client::Client,
+    data_types::{Config, FireAndForget, Region, WinId},
+    helpers::spawn,
+    hooks::Hook,
+    manager::WindowManager,
+};
+
+use std::{cell::RefCell, rc::Rc};
 
 /**
  * A Scratchpad spawns and manages a single Client which can then be shown above the current layout
@@ -94,6 +96,7 @@ impl Hook for Scratchpad {
         if *self.pending.borrow() && self.client.borrow().is_none() {
             self.pending.replace(false);
             self.client.replace(Some(c.id()));
+            c.externally_managed();
             self.toggle_client(wm);
         }
     }
@@ -110,17 +113,18 @@ impl Hook for Scratchpad {
         }
     }
 
-    fn layout_change(&mut self, wm: &mut WindowManager, _: usize, screen_index: usize) {
+    fn layout_applied(&mut self, wm: &mut WindowManager, _: usize, screen_index: usize) {
         match *self.client.borrow() {
             None => return, // no active scratchpad client
             Some(id) => {
-                let region = wm.screen_size(screen_index);
-                let (sx, sy, sw, sh) = region.values();
-                let w = (sw as f32 * self.w) as u32;
-                let h = (sh as f32 * self.h) as u32;
-                let x = sx + (sw - w) / 2;
-                let y = sy + (sh - h) / 2;
-                wm.position_client(id, Region::new(x, y, w, h));
+                if let Some(region) = wm.screen_size(screen_index) {
+                    let (sx, sy, sw, sh) = region.values();
+                    let w = (sw as f32 * self.w) as u32;
+                    let h = (sh as f32 * self.h) as u32;
+                    let x = sx + (sw - w) / 2;
+                    let y = sy + (sh - h) / 2;
+                    wm.position_client(id, Region::new(x, y, w, h));
+                }
             }
         }
     }

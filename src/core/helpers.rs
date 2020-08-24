@@ -1,6 +1,15 @@
 //! Utility functions for use in other parts of penrose
-use crate::data_types::{CodeMap, KeyCode};
-use std::process::{Command, Stdio};
+use crate::{
+    data_types::{CodeMap, KeyCode},
+    Result,
+};
+
+use std::{
+    io::Read,
+    process::{Command, Stdio},
+};
+
+use anyhow::anyhow;
 use xcb;
 
 /**
@@ -28,6 +37,36 @@ pub fn spawn<S: Into<String>>(cmd: S) {
     if let Err(e) = result {
         warn!("error spawning external program: {}", e);
     }
+}
+
+/**
+ * Run an external command and return its output.
+ *
+ * NOTE: std::process::Command::output will not work within penrose due to the
+ * way that signal handling is set up. Use this function if you need to access the
+ * output of a process that you spawn.
+ */
+pub fn spawn_for_output<S: Into<String>>(cmd: S) -> Result<String> {
+    let s = cmd.into();
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    let result = if parts.len() > 1 {
+        Command::new(parts[0])
+            .stdout(std::process::Stdio::piped())
+            .args(&parts[1..])
+            .spawn()
+    } else {
+        Command::new(parts[0])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+    };
+
+    let child = result?;
+    let mut buff = String::new();
+    Ok(child
+        .stdout
+        .ok_or_else(|| anyhow!("unable to get stdout for child process: {}", s))?
+        .read_to_string(&mut buff)
+        .map(|_| buff)?)
 }
 
 /**
@@ -72,10 +111,7 @@ pub fn keycodes_from_xmodmap() -> CodeMap {
  * The user friendly patterns are parsed into a modifier mask and X key code
  * pair that is then grabbed by penrose to trigger the bound action.
  */
-pub fn parse_key_binding<S>(pattern: S, known_codes: &CodeMap) -> Option<KeyCode>
-where
-    S: Into<String>,
-{
+pub fn parse_key_binding(pattern: impl Into<String>, known_codes: &CodeMap) -> Option<KeyCode> {
     let s = pattern.into();
     let mut parts: Vec<&str> = s.split("-").collect();
     match known_codes.get(parts.remove(parts.len() - 1)) {

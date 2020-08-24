@@ -1,23 +1,29 @@
 //! Information on connected displays
 use crate::data_types::{Point, Region};
-use xcb;
-use xcb::base::Reply;
-use xcb::ffi::randr::xcb_randr_get_crtc_info_reply_t;
+
+use xcb::{base::Reply, ffi::randr::xcb_randr_get_crtc_info_reply_t};
 
 type CRTCInfoReply = Reply<xcb_randr_get_crtc_info_reply_t>;
 
 /// Display information for a connected screen
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Screen {
-    /// The dimensions of the screen
-    pub true_region: Region,
-    /// The dimensions of the screen if bar is showing
-    pub effective_region: Region,
     /// The current workspace index being displayed
     pub wix: usize,
+    true_region: Region,
+    effective_region: Region,
 }
 
 impl Screen {
+    /// Create a new screen instance directly
+    pub fn new(region: Region, wix: usize) -> Screen {
+        Screen {
+            true_region: region.clone(),
+            effective_region: region,
+            wix,
+        }
+    }
+
     /// Create a new Screen from information obtained from the X server
     pub fn from_crtc_info_reply(r: CRTCInfoReply, wix: usize) -> Screen {
         let region = Region::new(
@@ -34,6 +40,8 @@ impl Screen {
         }
     }
 
+    /// Cache the current effective region of this screen based on whether or not a bar is
+    /// displayed and if that bar is positioned at the top or bottom of the screen.
     pub fn update_effective_region(&mut self, bar_height: u32, top_bar: bool) {
         let (x, y, w, h) = self.true_region.values();
         self.effective_region = if top_bar {
@@ -43,6 +51,8 @@ impl Screen {
         }
     }
 
+    /// The available space for displaying clients on this screen. If 'effective_only' then the
+    /// returned Region will account for space taken up by a bar.
     pub fn region(&self, effective_only: bool) -> Region {
         if effective_only {
             self.effective_region
@@ -51,6 +61,8 @@ impl Screen {
         }
     }
 
+    /// Determine whether or not an absolute coordinate Point (relative to the root window) is
+    /// located on this screen.
     pub fn contains(&self, p: Point) -> bool {
         let (x1, y1, w, h) = self.true_region.values();
         let (x2, y2) = (x1 + w, x1 + h);
