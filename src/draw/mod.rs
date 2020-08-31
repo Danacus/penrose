@@ -5,9 +5,13 @@ pub use bar::*;
 pub use inner::{Color, Draw, DrawContext, TextStyle, WindowType, XCBDraw, XCBDrawContext};
 
 mod inner {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, convert::TryFrom};
 
-    use crate::{core::data_types::WinId, Result};
+    use crate::{
+        core::data_types::{Region, WinId},
+        core::helpers::xcb_util,
+        Result,
+    };
 
     use anyhow::anyhow;
     use cairo::{Context, XCBConnection, XCBDrawable, XCBSurface, XCBVisualType};
@@ -21,14 +25,14 @@ mod inner {
     fn new_cairo_surface(
         conn: &xcb::Connection,
         screen: &xcb::Screen,
-        window_type: &WindowType,
+        wt: &WindowType,
         x: i16,
         y: i16,
         w: i32,
         h: i32,
     ) -> Result<(u32, XCBSurface)> {
-        let id = create_window(conn, screen, window_type, x, y, w as u16, h as u16)?;
-        let mut visualtype = get_visual_type(&conn, screen)?;
+        let id = xcb_util::create_window(conn, screen, wt.as_ewmh_str(), x, y, w as u16, h as u16)?;
+        let mut visualtype = xcb_util::get_visual_type(&conn, screen)?;
 
         let surface = unsafe {
             let conn_ptr = conn.get_raw_conn() as *mut cairo_sys::xcb_connection_t;
@@ -48,67 +52,6 @@ mod inner {
 
         surface.set_size(w, h).unwrap();
         Ok((id, surface))
-    }
-
-    fn get_visual_type(conn: &xcb::Connection, screen: &xcb::Screen) -> Result<xcb::Visualtype> {
-        conn.get_setup()
-            .roots()
-            .flat_map(|r| r.allowed_depths())
-            .flat_map(|d| d.visuals())
-            .find(|v| v.visual_id() == screen.root_visual())
-            .ok_or_else(|| anyhow!("unable to get screen visual type"))
-    }
-
-    fn create_window(
-        conn: &xcb::Connection,
-        screen: &xcb::Screen,
-        window_type: &WindowType,
-        x: i16,
-        y: i16,
-        w: u16,
-        h: u16,
-    ) -> Result<u32> {
-        let id = conn.generate_id();
-
-        xcb::create_window(
-            &conn,
-            xcb::COPY_FROM_PARENT as u8,
-            id,
-            screen.root(),
-            x,
-            y,
-            w,
-            h,
-            0,
-            xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            0,
-            &[
-                (xcb::CW_BACK_PIXEL, screen.black_pixel()),
-                (xcb::CW_EVENT_MASK, xcb::EVENT_MASK_EXPOSURE),
-            ],
-        );
-
-        xcb::change_property(
-            &conn,                                      // xcb connection to X11
-            xcb::PROP_MODE_REPLACE as u8,               // discard current prop and replace
-            id,                                         // window to change prop on
-            intern_atom(&conn, "_NET_WM_WINDOW_TYPE")?, // prop to change
-            intern_atom(&conn, "UTF8_STRING")?,         // type of prop
-            8,                                          // data format (8/16/32-bit)
-            window_type.as_ewmh_str().as_bytes(),       // data
-        );
-
-        xcb::map_window(&conn, id);
-        conn.flush();
-
-        Ok(id)
-    }
-
-    fn intern_atom(conn: &xcb::Connection, name: &str) -> Result<u32> {
-        xcb::intern_atom(conn, false, name)
-            .get_reply()
-            .map(|r| r.atom())
-            .map_err(|err| anyhow!("unable to intern xcb atom '{}': {}", name, err))
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -136,11 +79,15 @@ mod inner {
     impl Color {
         /// Create a new Color from a hex encoded u32: 0xRRGGBB
         pub fn new_from_hex(hex: u32) -> Self {
-            Self {
-                r: ((hex & 0xFF0000) >> 16) as f64 / 255.0,
-                g: ((hex & 0x00FF00) >> 8) as f64 / 255.0,
-                b: (hex & 0x0000FF) as f64 / 255.0,
-            }
+            let floats: Vec<f64> = hex
+                .to_be_bytes()
+                .iter()
+                .skip(1)
+                .map(|n| *n as f64 / 255.0)
+                .collect();
+
+            let (r, g, b) = (floats[0], floats[1], floats[2]);
+            Self { r, g, b }
         }
 
         /// The RGB information of this color as 0.0-1.0 range floats representing
@@ -160,6 +107,17 @@ mod inner {
         fn from(rgb: (f64, f64, f64)) -> Self {
             let (r, g, b) = rgb;
             Self { r, g, b }
+        }
+    }
+
+    impl TryFrom<String> for Color {
+        type Error = std::num::ParseIntError;
+
+        fn try_from(s: String) -> std::result::Result<Color, Self::Error> {
+            Ok(Self::new_from_hex(u32::from_str_radix(
+                s.strip_prefix('#').unwrap_or_else(|| &s),
+                16,
+            )?))
         }
     }
 
@@ -197,7 +155,7 @@ mod inner {
             h: usize,
         ) -> Result<WinId>;
         /// Get the size of the target screen in pixels
-        fn screen_size(&self, ix: usize) -> Result<(usize, usize)>;
+        fn screen_sizes(&self) -> Result<Vec<Region>>;
         /// Register a font by name for later use
         fn register_font(&mut self, font_name: &str);
         /// Get a new DrawContext for the target window
@@ -208,6 +166,8 @@ mod inner {
         fn map_window(&self, id: WinId);
         /// Unmap the target window from the screen
         fn unmap_window(&self, id: WinId);
+        /// Destroy the target window
+        fn destroy_window(&self, id: WinId);
     }
 
     /// Used for simple drawing to the screen
@@ -252,12 +212,11 @@ mod inner {
         }
 
         fn screen(&self, ix: usize) -> Result<xcb::Screen> {
-            Ok(self
-                .conn
+            self.conn
                 .get_setup()
                 .roots()
                 .nth(ix)
-                .ok_or_else(|| anyhow!("Screen index out of bounds"))?)
+                .ok_or_else(|| anyhow!("Screen index out of bounds"))
         }
     }
     impl Draw for XCBDraw {
@@ -280,9 +239,8 @@ mod inner {
             Ok(id)
         }
 
-        fn screen_size(&self, ix: usize) -> Result<(usize, usize)> {
-            let s = self.screen(ix)?;
-            Ok((s.width_in_pixels() as usize, s.height_in_pixels() as usize))
+        fn screen_sizes(&self) -> Result<Vec<Region>> {
+            xcb_util::screen_sizes(&self.conn)
         }
 
         fn register_font(&mut self, font_name: &str) {
@@ -316,6 +274,10 @@ mod inner {
 
         fn unmap_window(&self, id: WinId) {
             xcb::unmap_window(&self.conn, id);
+        }
+
+        fn destroy_window(&self, id: WinId) {
+            xcb::destroy_window(&self.conn, id);
         }
     }
 

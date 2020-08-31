@@ -116,16 +116,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let highlight = BLUE;
     let empty_ws = GREY;
 
-    let mut bar = dwm_bar(
-        Box::new(XCBDraw::new()?),
-        0,
-        HEIGHT,
-        &style,
-        highlight,
-        empty_ws,
-        workspaces,
-    )?;
-
     /* hooks
      *
      * penrose provides several hook points where you can run your own code as part of
@@ -136,7 +126,6 @@ fn main() -> Result<(), Box<dyn Error>> {
      * modify their behaviour if desired.
      */
     config.hooks.push(Box::new(MyClientHook {}));
-    config.hooks.push(Box::new(bar));
 
     // Using a simple contrib hook that takes no config. By convention, contrib hooks have a 'new'
     // method that returns a boxed instance of the hook with any configuration performed so that it
@@ -239,18 +228,4 @@ fn test_new_functions(wm: &mut WindowManager) {
 
     let all = wm.all_workspaces(&Selector::Condition(&|w: &Workspace| w.len() > 0));
     wm.log(&format!("{:#?}", all));
-}
-
-fn setup_bar() -> Result<StatusBar<XCBDrawContext>, Box<dyn Error>> {
-    let mut bar = StatusBar::try_new(
-        Box::new(XCBDraw::new()?),
-        Position::Top,
-        0,
-        18,
-        Color::from(0x3c3836),
-        &["Fira Code"],
-        Vec::new(),
-    )?;
-
-    Ok(bar)
 }

@@ -1,7 +1,7 @@
 //! Built in status bar widgets
 use crate::{
     client::Client,
-    data_types::{Selector, WinId},
+    data_types::{Region, Selector, WinId},
     draw::{Color, DrawContext, TextStyle, Widget},
     hooks::Hook,
     Result, WindowManager,
@@ -57,12 +57,18 @@ impl Text {
             self.require_draw = true;
         }
     }
+
+    /// Force this text widget to redraw on the next render request.
+    /// Mostly used when being wrapped by another widget.
+    pub fn force_draw(&mut self) {
+        self.require_draw = true;
+    }
 }
 
 impl Hook for Text {}
 
 impl Widget for Text {
-    fn draw(&mut self, ctx: &mut dyn DrawContext, w: f64, h: f64) -> Result<()> {
+    fn draw(&mut self, ctx: &mut dyn DrawContext, _: usize, _: bool, w: f64, h: f64) -> Result<()> {
         if let Some(color) = self.bg {
             ctx.color(&color);
             ctx.rectangle(0.0, 0.0, w, h);
@@ -132,9 +138,7 @@ pub struct Workspaces {
     workspaces: Vec<WSMeta>,
     font: String,
     point_size: i32,
-    screen: usize,
-    is_focused: bool,
-    focused_ws: usize,
+    focused_ws: Vec<usize>, // focused ws per screen
     require_draw: bool,
     extent: Option<(f64, f64)>,
     fg_1: Color,
@@ -147,7 +151,6 @@ impl Workspaces {
     /// Construct a new WorkspaceWidget
     pub fn new(
         workspace_names: &[&str],
-        screen: usize,
         style: &TextStyle,
         highlight: impl Into<Color>,
         empty_fg: impl Into<Color>,
@@ -156,9 +159,7 @@ impl Workspaces {
             workspaces: meta_from_names(workspace_names),
             font: style.font.clone(),
             point_size: style.point_size,
-            screen,
-            is_focused: screen == 0,
-            focused_ws: 0,
+            focused_ws: vec![], // set in startup hook
             require_draw: false,
             extent: None,
             fg_1: style.fg,
@@ -187,6 +188,36 @@ impl Workspaces {
             }
         }
     }
+
+    fn ws_colors(
+        &self,
+        ix: usize,
+        screen: usize,
+        screen_has_focus: bool,
+        occupied: bool,
+    ) -> (&Color, Option<&Color>) {
+        let focused_here = match self.focused_ws.get(screen) {
+            Some(&ws) => ix == ws,
+            None => false,
+        };
+        let focused = self.focused_ws.contains(&ix);
+        let focused_other = focused && !focused_here;
+
+        if focused_here && screen_has_focus {
+            let fg = if occupied { &self.fg_1 } else { &self.fg_2 };
+            (fg, Some(&self.bg_1))
+        } else if focused {
+            let fg = if focused_other {
+                &self.bg_1
+            } else {
+                &self.fg_1
+            };
+            (fg, Some(&self.fg_2))
+        } else {
+            let fg = if occupied { &self.fg_1 } else { &self.fg_2 };
+            (fg, None)
+        }
+    }
 }
 
 impl Hook for Workspaces {
@@ -202,8 +233,9 @@ impl Hook for Workspaces {
     }
 
     fn workspace_change(&mut self, wm: &mut WindowManager, _: usize, new: usize) {
-        if self.focused_ws != new {
-            self.focused_ws = new;
+        let screen = wm.active_screen_index();
+        if self.focused_ws[screen] != new {
+            self.focused_ws[screen] = new;
             if let Some(ws) = self.workspaces.get_mut(new) {
                 let res = wm.workspace(&Selector::Condition(&|w| w.name() == ws.name));
                 ws.occupied = if let Some(w) = res {
@@ -217,9 +249,9 @@ impl Hook for Workspaces {
         }
     }
 
-    fn workspaces_updated(&mut self, wm: &mut WindowManager, names: &Vec<&str>, active: usize) {
+    fn workspaces_updated(&mut self, wm: &mut WindowManager, names: &Vec<&str>, _: usize) {
         if names != &self.names() {
-            self.focused_ws = active;
+            self.focused_ws = wm.focused_workspaces();
             self.workspaces = meta_from_names(names);
             self.update_workspace_occupied(wm);
             self.extent = None;
@@ -227,15 +259,31 @@ impl Hook for Workspaces {
         }
     }
 
-    fn screen_change(&mut self, _: &mut WindowManager, ix: usize) {
-        let now_focused = ix == self.screen;
-        self.require_draw = self.is_focused != now_focused;
-        self.is_focused = now_focused;
+    fn screen_change(&mut self, _: &mut WindowManager, _: usize) {
+        self.require_draw = true;
+    }
+
+    fn screens_updated(&mut self, wm: &mut WindowManager, _: &Vec<Region>) {
+        self.focused_ws = (0..wm.n_screens()).collect();
+        self.update_workspace_occupied(wm);
+        self.require_draw = true;
+    }
+
+    fn startup(&mut self, wm: &mut WindowManager) {
+        // NOTE: Following initial workspace placement from WindowManager
+        self.focused_ws = (0..wm.n_screens()).collect()
     }
 }
 
 impl Widget for Workspaces {
-    fn draw(&mut self, ctx: &mut dyn DrawContext, w: f64, h: f64) -> Result<()> {
+    fn draw(
+        &mut self,
+        ctx: &mut dyn DrawContext,
+        screen: usize,
+        screen_has_focus: bool,
+        w: f64,
+        h: f64,
+    ) -> Result<()> {
         ctx.color(&self.bg_2);
         ctx.rectangle(0.0, 0.0, w, h);
         ctx.font(&self.font, self.point_size)?;
@@ -243,13 +291,13 @@ impl Widget for Workspaces {
         let (_, eh) = self.extent.unwrap();
 
         for (i, ws) in self.workspaces.iter().enumerate() {
-            if i == self.focused_ws {
-                ctx.color(&self.bg_1);
+            let (fg, bg) = self.ws_colors(i, screen, screen_has_focus, ws.occupied);
+            if let Some(c) = bg {
+                ctx.color(c);
                 ctx.rectangle(0.0, 0.0, ws.extent.0, h);
             }
 
-            let fg = if ws.occupied { self.fg_1 } else { self.fg_2 };
-            ctx.color(&fg);
+            ctx.color(fg);
             ctx.text(&ws.name, h - eh, (PADDING, PADDING))?;
             ctx.translate(ws.extent.0, 0.0);
         }
@@ -311,8 +359,8 @@ impl Hook for RootWindowName {
 }
 
 impl Widget for RootWindowName {
-    fn draw(&mut self, ctx: &mut dyn DrawContext, w: f64, h: f64) -> Result<()> {
-        self.txt.draw(ctx, w, h)
+    fn draw(&mut self, ctx: &mut dyn DrawContext, s: usize, f: bool, w: f64, h: f64) -> Result<()> {
+        self.txt.draw(ctx, s, f, w, h)
     }
 
     fn current_extent(&mut self, ctx: &mut dyn DrawContext, h: f64) -> Result<(f64, f64)> {
@@ -378,11 +426,26 @@ impl Hook for ActiveWindowName {
             }
         }
     }
+
+    fn screen_change(&mut self, _: &mut WindowManager, _: usize) {
+        self.txt.force_draw();
+    }
 }
 
 impl Widget for ActiveWindowName {
-    fn draw(&mut self, ctx: &mut dyn DrawContext, w: f64, h: f64) -> Result<()> {
-        self.txt.draw(ctx, w, h)
+    fn draw(
+        &mut self,
+        ctx: &mut dyn DrawContext,
+        screen: usize,
+        screen_has_focus: bool,
+        w: f64,
+        h: f64,
+    ) -> Result<()> {
+        if screen_has_focus {
+            self.txt.draw(ctx, screen, screen_has_focus, w, h)
+        } else {
+            Ok(())
+        }
     }
 
     fn current_extent(&mut self, ctx: &mut dyn DrawContext, h: f64) -> Result<(f64, f64)> {
@@ -431,8 +494,8 @@ impl Hook for CurrentLayout {
 }
 
 impl Widget for CurrentLayout {
-    fn draw(&mut self, ctx: &mut dyn DrawContext, w: f64, h: f64) -> Result<()> {
-        self.txt.draw(ctx, w, h)
+    fn draw(&mut self, ctx: &mut dyn DrawContext, s: usize, f: bool, w: f64, h: f64) -> Result<()> {
+        self.txt.draw(ctx, s, f, w, h)
     }
 
     fn current_extent(&mut self, ctx: &mut dyn DrawContext, h: f64) -> Result<(f64, f64)> {
