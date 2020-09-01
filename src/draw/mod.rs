@@ -70,30 +70,42 @@ mod inner {
     }
 
     #[derive(Clone, Copy, Debug, PartialEq)]
-    /// A simple RGB based color
+    /// A simple RGBA based color
     pub struct Color {
         r: f64,
         g: f64,
         b: f64,
+        a: f64,
     }
     impl Color {
         /// Create a new Color from a hex encoded u32: 0xRRGGBB
         pub fn new_from_hex(hex: u32) -> Self {
-            let floats: Vec<f64> = hex
+            let mut floats: Vec<f64> = hex
                 .to_be_bytes()
                 .iter()
                 .skip(1)
                 .map(|n| *n as f64 / 255.0)
                 .collect();
 
-            let (r, g, b) = (floats[0], floats[1], floats[2]);
-            Self { r, g, b }
+            // Add alpha value if not supplied
+            if floats.len() == 3 {
+                floats.push(1.0);
+            }
+
+            let (r, g, b, a) = (floats[0], floats[1], floats[2], floats[3]);
+            Self { r, g, b, a }
         }
 
         /// The RGB information of this color as 0.0-1.0 range floats representing
         /// proportions of 255 for each of R, G, B
         pub fn rgb(&self) -> (f64, f64, f64) {
             (self.r, self.g, self.b)
+        }
+
+        /// The RGBA information of this color as 0.0-1.0 range floats representing
+        /// proportions of 255 for each of R, G, B, A
+        pub fn rgba(&self) -> (f64, f64, f64, f64) {
+            (self.r, self.g, self.b, self.a)
         }
     }
 
@@ -106,7 +118,14 @@ mod inner {
     impl From<(f64, f64, f64)> for Color {
         fn from(rgb: (f64, f64, f64)) -> Self {
             let (r, g, b) = rgb;
-            Self { r, g, b }
+            Self { r, g, b, a: 1.0 }
+        }
+    }
+
+    impl From<(f64, f64, f64, f64)> for Color {
+        fn from(rgba: (f64, f64, f64, f64)) -> Self {
+            let (r, g, b, a) = rgba;
+            Self { r, g, b, a }
         }
     }
 
@@ -301,8 +320,8 @@ mod inner {
         }
 
         fn color(&mut self, color: &Color) {
-            let (r, g, b) = color.rgb();
-            self.ctx.set_source_rgb(r, g, b);
+            let (r, g, b, a) = color.rgba();
+            self.ctx.set_source_rgba(r, g, b, a);
         }
 
         fn translate(&self, dx: f64, dy: f64) {
