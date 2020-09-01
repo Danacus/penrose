@@ -22,7 +22,6 @@ use penrose::{
     layout::{bottom_stack, side_stack, monocle, Layout, LayoutConf},
     Backward, Config, Forward, Less, More, WindowManager, XcbConnection,
     draw::*, 
-    data_types::Selector,
 };
 
 use std::error::Error;

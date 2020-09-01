@@ -82,6 +82,10 @@ impl<Ctx: DrawContext> StatusBar<Ctx> {
             let screen_has_focus = self.active_screen == i;
             let mut ctx = self.drw.context_for(id)?;
 
+            info!("Drawing bar");
+
+            ctx.clear();
+
             ctx.color(&self.bg);
             ctx.rectangle(0.0, 0.0, w, self.h as f64);
 
