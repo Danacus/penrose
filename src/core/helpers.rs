@@ -161,18 +161,19 @@ pub(crate) mod xcb_util {
     ) -> Result<u32> {
         let id = conn.generate_id();
         let colormap = conn.generate_id();
+        let visual = get_visual_type(&conn, &screen).unwrap();
 
         xcb::xproto::create_colormap(
             &conn,
             xcb::COLORMAP_ALLOC_NONE as u8,
             colormap,
             screen.root(),
-            screen.root_visual(), 
+            visual.visual_id(), 
         );
 
         xcb::create_window(
             &conn,
-            xcb::COPY_FROM_PARENT as u8,
+            32,
             id,
             screen.root(),
             x,
@@ -181,7 +182,7 @@ pub(crate) mod xcb_util {
             h,
             0,
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            0,
+            visual.visual_id(),
             &[
                 (xcb::CW_BORDER_PIXEL, screen.white_pixel()),
                 (xcb::CW_COLORMAP, colormap),

@@ -86,6 +86,7 @@ impl<Ctx: DrawContext> StatusBar<Ctx> {
 
             ctx.clear();
 
+            info!("{:#?}", &self.bg);
             ctx.color(&self.bg);
             ctx.rectangle(0.0, 0.0, w, self.h as f64);
 

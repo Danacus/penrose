@@ -79,19 +79,15 @@ mod inner {
         a: f64,
     }
     impl Color {
-        /// Create a new Color from a hex encoded u32: 0xRRGGBB
+        /// Create a new Color from a hex encoded u32: 0xRRGGBBAA
         pub fn new_from_hex(hex: u32) -> Self {
-            let mut floats: Vec<f64> = hex
-                .to_be_bytes()
+            let floats: Vec<f64> = hex.to_be_bytes()
                 .iter()
-                .skip(1)
                 .map(|n| *n as f64 / 255.0)
                 .collect();
 
-            // Add alpha value if not supplied
-            if floats.len() == 3 {
-                floats.push(1.0);
-            }
+
+            info!("I have received {} from you and will use {:?}", hex, floats);
 
             let (r, g, b, a) = (floats[0], floats[1], floats[2], floats[3]);
             Self { r, g, b, a }
