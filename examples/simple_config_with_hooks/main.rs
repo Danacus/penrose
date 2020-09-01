@@ -17,6 +17,7 @@ use penrose::{
         hooks::{DefaultWorkspace, LayoutSymbolAsRootName},
         layouts::paper,
     },
+    data_types::Selector,
     hooks::Hook,
     layout::{bottom_stack, side_stack, monocle, Layout, LayoutConf},
     Backward, Config, Forward, Less, More, WindowManager, XcbConnection,
@@ -168,6 +169,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "M-S-j" => run_internal!(drag_client, Forward),
         "M-S-k" => run_internal!(drag_client, Backward),
         "M-S-q" => run_internal!(kill_client),
+        "M-S-f" => run_internal!(toggle_client_fullscreen, &Selector::Focused),
         "M-slash" => sp.toggle(),
 
         // workspace management
