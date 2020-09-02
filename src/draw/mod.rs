@@ -32,7 +32,9 @@ mod inner {
         h: i32,
     ) -> Result<(u32, XCBSurface)> {
         let id = xcb_util::create_window(conn, screen, wt.as_ewmh_str(), x, y, w as u16, h as u16)?;
-        let mut visualtype = xcb_util::get_visual_type(screen)?;
+
+        let depth = xcb_util::get_depth(screen)?;
+        let mut visualtype = xcb_util::get_visual_type(&depth)?;
 
         let surface = unsafe {
             let conn_ptr = conn.get_raw_conn() as *mut cairo_sys::xcb_connection_t;

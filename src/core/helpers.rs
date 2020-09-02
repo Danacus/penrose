@@ -161,7 +161,9 @@ pub(crate) mod xcb_util {
     ) -> Result<u32> {
         let id = conn.generate_id();
         let colormap = conn.generate_id();
-        let visual = get_visual_type(screen).unwrap();
+
+        let depth = get_depth(screen)?;
+        let visual = get_visual_type(&depth)?;
 
         xcb::xproto::create_colormap(
             &conn,
@@ -173,7 +175,7 @@ pub(crate) mod xcb_util {
 
         xcb::create_window(
             &conn,
-            32,
+            depth.depth(),
             id,
             screen.root(),
             x,
@@ -214,14 +216,12 @@ pub(crate) mod xcb_util {
             .ok_or_else(|| anyhow!("unable to get screen depth"))
     }
 
-    pub fn get_visual_type(
-        screen: &xcb::Screen,
+    pub fn get_visual_type<'a>(
+        depth: &xcb::Depth<'a>,
     ) -> Result<xcb::Visualtype> {
-        screen.allowed_depths()
-            .filter(|d| depth.map_or_else(|| false, |depth| d.depth() == depth))
-            .flat_map(|d| d.visuals())
-            .find(|v| v.class() == xcb::VISUAL_CLASS_TRUE_COLOR as u8);
-
+        depth.visuals()
+            .find(|v| v.class() == xcb::VISUAL_CLASS_TRUE_COLOR as u8)
+            .ok_or_else(|| anyhow!("unable to get visual type"))
     }
 
     pub fn screen_sizes(conn: &xcb::Connection) -> Result<Vec<Region>> {
