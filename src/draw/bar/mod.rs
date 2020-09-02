@@ -11,6 +11,8 @@ use crate::{
     Result,
 };
 
+use std::convert::TryInto;
+
 const MAX_ACTIVE_WINDOW_CHARS: usize = 80;
 
 /**
@@ -63,7 +65,7 @@ pub fn dwm_bar<Ctx: DrawContext>(
         drw,
         Position::Top,
         height,
-        style.bg.unwrap_or(0x00000000.into()),
+        style.bg.unwrap_or("#00000000".try_into()?),
         &[&style.font],
         vec![
             Box::new(Workspaces::new(workspaces, style, highlight, empty_ws)),

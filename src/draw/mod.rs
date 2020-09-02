@@ -5,7 +5,7 @@ pub use bar::*;
 pub use inner::{Color, Draw, DrawContext, TextStyle, WindowType, XCBDraw, XCBDrawContext};
 
 mod inner {
-    use std::{collections::HashMap, convert::TryFrom};
+    use std::{collections::HashMap, convert::TryFrom, convert::TryInto};
 
     use crate::{
         core::data_types::{Region, WinId},
@@ -32,8 +32,7 @@ mod inner {
         h: i32,
     ) -> Result<(u32, XCBSurface)> {
         let id = xcb_util::create_window(conn, screen, wt.as_ewmh_str(), x, y, w as u16, h as u16)?;
-        let mut visualtype = xcb_util::get_visual_type(&conn, screen)?;
-        info!("Using visual type: {}", visualtype.visual_id());
+        let mut visualtype = xcb_util::get_visual_type(screen)?;
 
         let surface = unsafe {
             let conn_ptr = conn.get_raw_conn() as *mut cairo_sys::xcb_connection_t;
@@ -80,17 +79,26 @@ mod inner {
     }
     impl Color {
         /// Create a new Color from a hex encoded u32: 0xRRGGBBAA
-        pub fn new_from_hex(hex: u32) -> Self {
+        pub fn new_from_hex_rgba(hex: u32) -> Self {
             let floats: Vec<f64> = hex.to_be_bytes()
                 .iter()
                 .map(|n| *n as f64 / 255.0)
                 .collect();
 
-
-            info!("I have received {} from you and will use {:?}", hex, floats);
-
             let (r, g, b, a) = (floats[0], floats[1], floats[2], floats[3]);
             Self { r, g, b, a }
+        }
+
+        /// Create a new Color from a hex encoded u32: 0xRRGGBB
+        pub fn new_from_hex_rgb(hex: u32) -> Self {
+            let floats: Vec<f64> = hex.to_be_bytes()
+                .iter()
+                .map(|n| *n as f64 / 255.0)
+                .skip(1)
+                .collect();
+
+            let (r, g, b) = (floats[0], floats[1], floats[2]);
+            Self { r, g, b, a: 1.0 }
         }
 
         /// The RGB information of this color as 0.0-1.0 range floats representing
@@ -108,7 +116,7 @@ mod inner {
 
     impl From<u32> for Color {
         fn from(hex: u32) -> Self {
-            Self::new_from_hex(hex)
+            Self::new_from_hex_rgb(hex)
         }
     }
 
@@ -127,13 +135,29 @@ mod inner {
     }
 
     impl TryFrom<String> for Color {
-        type Error = std::num::ParseIntError;
+        type Error = anyhow::Error;
 
-        fn try_from(s: String) -> std::result::Result<Color, Self::Error> {
-            Ok(Self::new_from_hex(u32::from_str_radix(
+        fn try_from(s: String) -> Result<Color> {
+            (&s[..]).try_into()
+        }
+    }
+
+    impl TryFrom<&str> for Color {
+        type Error = anyhow::Error;
+
+        fn try_from(s: &str) -> Result<Color> {
+            let hex = u32::from_str_radix(
                 s.strip_prefix('#').unwrap_or_else(|| &s),
                 16,
-            )?))
+            )?;
+
+            if s.len() == 7 {
+                Ok(Self::new_from_hex_rgb(hex))
+            } else if s.len() == 9 {
+                Ok(Self::new_from_hex_rgba(hex))
+            } else {
+                Err(anyhow!("failed to parse {} into a Color, invalid length", &s))
+            }
         }
     }
 

@@ -7,6 +7,8 @@ use crate::{
     Result, WindowManager,
 };
 
+use std::convert::TryInto;
+
 const PADDING: f64 = 3.0;
 
 /// A simple piece of static text with an optional background color.
@@ -165,7 +167,7 @@ impl Workspaces {
             fg_1: style.fg,
             fg_2: empty_fg.into(),
             bg_1: highlight.into(),
-            bg_2: style.bg.unwrap_or(0x000000.into()),
+            bg_2: style.bg.unwrap_or("#00000000".try_into().unwrap()),
         }
     }
 
