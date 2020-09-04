@@ -21,6 +21,7 @@ use xcb;
 pub fn spawn<S: Into<String>>(cmd: S) {
     let s = cmd.into();
     let parts: Vec<&str> = s.split_whitespace().collect();
+
     let result = if parts.len() > 1 {
         Command::new(parts[0])
             .args(&parts[1..])

@@ -1,13 +1,27 @@
 //! A scratchpad that holds a single client
 use crate::core::{
     client::Client,
-    data_types::{Config, FireAndForget, Region, WinId},
+    data_types::{Config, FireAndForget, Region, WinId, Point},
     helpers::spawn,
     hooks::Hook,
     manager::WindowManager,
 };
 
 use std::{cell::RefCell, rc::Rc};
+
+#[derive(Copy, Clone)]
+pub enum HorizontalPosition {
+    Left, Center, Right,
+}
+
+#[derive(Copy, Clone)]
+pub enum VerticalPosition {
+    Top, Center, Bottom,
+}
+
+#[derive(Copy, Clone)]
+pub struct FloatPosition(pub HorizontalPosition, pub VerticalPosition);
+
 
 /**
  * A Scratchpad spawns and manages a single Client which can then be shown above the current layout
@@ -25,13 +39,14 @@ pub struct Scratchpad {
     prog: &'static str,
     w: f32,
     h: f32,
+    float_position: FloatPosition,
 }
 
 impl Scratchpad {
     /// Create a new Scratchpad for holding 'prog'. 'w' and 'h' are the percentage width and height
     /// of the active screen that you want the client to take up when visible.
     /// NOTE: this function will panic if 'w' or 'h' are not within the range 0.0 - 1.0
-    pub fn new(prog: &'static str, w: f32, h: f32) -> Scratchpad {
+    pub fn new(prog: &'static str, w: f32, h: f32, float_position: FloatPosition) -> Scratchpad {
         if w < 0.0 || w > 1.0 || h < 0.0 || h > 1.0 {
             panic!("Scratchpad: w & h must be between 0.0 and 1.0");
         }
@@ -43,6 +58,7 @@ impl Scratchpad {
             prog,
             w,
             h,
+            float_position,
         }
     }
 
@@ -54,6 +70,7 @@ impl Scratchpad {
             prog: self.prog,
             w: self.w,
             h: self.h,
+            float_position: self.float_position,
         })
     }
 
@@ -89,6 +106,26 @@ impl Scratchpad {
             self.visible.replace(true);
         }
     }
+
+    fn get_position(&self, screen: Region) -> Region {
+        let (sx, sy, sw, sh) = screen.values();
+        let w = (sw as f32 * self.w) as u32;
+        let h = (sh as f32 * self.h) as u32;
+
+        let x = match self.float_position.0 {
+            HorizontalPosition::Left => sx,
+            HorizontalPosition::Right => sx + sw - w,
+            HorizontalPosition::Center => sx + (sw - w) / 2,
+        };
+
+        let y = match self.float_position.1 {
+            VerticalPosition::Top => sy,
+            VerticalPosition::Bottom => sy + sh - h,
+            VerticalPosition::Center => sy + (sh - h) / 2,
+        };
+
+        Region::new(x, y, w, h)
+    }
 }
 
 impl Hook for Scratchpad {
@@ -118,12 +155,7 @@ impl Hook for Scratchpad {
             None => return, // no active scratchpad client
             Some(id) => {
                 if let Some(region) = wm.screen_size(screen_index) {
-                    let (sx, sy, sw, sh) = region.values();
-                    let w = (sw as f32 * self.w) as u32;
-                    let h = (sh as f32 * self.h) as u32;
-                    let x = sx + (sw - w) / 2;
-                    let y = sy + (sh - h) / 2;
-                    wm.position_client(id, Region::new(x, y, w, h));
+                    wm.position_client(id, self.get_position(region));
                 }
             }
         }
