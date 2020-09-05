@@ -80,27 +80,17 @@ mod inner {
         a: f64,
     }
     impl Color {
-        /// Create a new Color from a hex encoded u32: 0xRRGGBBAA
-        pub fn new_from_hex_rgba(hex: u32) -> Self {
-            let floats: Vec<f64> = hex.to_be_bytes()
-                .iter()
-                .map(|n| *n as f64 / 255.0)
-                .collect();
-
-            let (r, g, b, a) = (floats[0], floats[1], floats[2], floats[3]);
-            Self { r, g, b, a }
-        }
-
-        /// Create a new Color from a hex encoded u32: 0xRRGGBB
-        pub fn new_from_hex_rgb(hex: u32) -> Self {
-            let floats: Vec<f64> = hex.to_be_bytes()
+        /// Create a new Color from a hex encoded u32: 0xRRGGBB or 0xRRGGBBAA
+        pub fn new_from_hex(hex: u32) -> Self {
+            let floats: Vec<f64> = hex
+                .to_be_bytes()
                 .iter()
                 .map(|n| *n as f64 / 255.0)
                 .skip(1)
                 .collect();
 
-            let (r, g, b) = (floats[0], floats[1], floats[2]);
-            Self { r, g, b, a: 1.0 }
+            let (r, g, b, a) = (floats[0], floats[1], floats[2], floats[3]);
+            Self { r, g, b, a }
         }
 
         /// The RGB information of this color as 0.0-1.0 range floats representing
@@ -148,17 +138,17 @@ mod inner {
         type Error = anyhow::Error;
 
         fn try_from(s: &str) -> Result<Color> {
-            let hex = u32::from_str_radix(
-                s.strip_prefix('#').unwrap_or_else(|| &s),
-                16,
-            )?;
+            let hex = u32::from_str_radix(s.strip_prefix('#').unwrap_or_else(|| &s), 16)?;
 
             if s.len() == 7 {
-                Ok(Self::new_from_hex_rgb(hex))
+                Ok(Self::new_from_hex((hex << 8) + 0xFF))
             } else if s.len() == 9 {
-                Ok(Self::new_from_hex_rgba(hex))
+                Ok(Self::new_from_hex(hex))
             } else {
-                Err(anyhow!("failed to parse {} into a Color, invalid length", &s))
+                Err(anyhow!(
+                    "failed to parse {} into a Color, invalid length",
+                    &s
+                ))
             }
         }
     }
@@ -412,5 +402,46 @@ mod inner {
         fn flush(&self) {
             self.ctx.get_target().flush();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::convert::TryFrom;
+
+    #[test]
+    fn test_color_from_hex_rgba() {
+        assert_eq!(Color::from(0x00000000), Color::from((0.0, 0.0, 0.0, 0.0)));
+        assert_eq!(Color::from(0xFF00FFFF), Color::from((1.0, 0.0, 1.0, 1.0)));
+        assert_eq!(Color::from(0xFFFFFFFF), Color::from((1.0, 1.0, 1.0, 1.0)));
+        assert_eq!(Color::from(0xFFFF00FF), Color::from((1.0, 1.0, 0.0, 1.0)));
+        assert_eq!(Color::from(0xFFFF0000), Color::from((1.0, 1.0, 0.0, 0.0)));
+        assert_eq!(Color::from(0xFF000000), Color::from((1.0, 0.0, 0.0, 0.0)));
+        assert_eq!(Color::from(0x000000FF), Color::from((0.0, 0.0, 0.0, 1.0)));
+    }
+
+    #[test]
+    fn test_color_from_str_rgb() {
+        assert_eq!(
+            Color::try_from("#000000").unwrap(),
+            Color::from((0.0, 0.0, 0.0, 1.0))
+        );
+        assert_eq!(
+            Color::try_from("#FF00FF").unwrap(),
+            Color::from((1.0, 0.0, 1.0, 1.0))
+        );
+    }
+
+    #[test]
+    fn test_color_from_str_rgba() {
+        assert_eq!(
+            Color::try_from("#000000FF").unwrap(),
+            Color::from((0.0, 0.0, 0.0, 1.0))
+        );
+        assert_eq!(
+            Color::try_from("#FF00FF00").unwrap(),
+            Color::from((1.0, 0.0, 1.0, 0.0))
+        );
     }
 }
