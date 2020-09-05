@@ -10,13 +10,13 @@ use crate::core::{
 use std::{cell::RefCell, rc::Rc};
 
 /**
- * Position of an Anchor
+ * An Anchor describing where the reference point of an AnchoredPosition should be
  * 'Top' and 'Bottom' should only be used for the vertical position
  * 'Left' and 'Right' should only be used for the horizontal position
  * 'Center' can be used for either
  */
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum AnchorPosition {
+pub enum Anchor {
     /// Top of the screen
     Top,
     /// Center of the screen
@@ -29,42 +29,40 @@ pub enum AnchorPosition {
     Right,
 }
 
-pub use AnchorPosition::*;
-
 /// Where a Scratchpad should be placed on the screen
 #[derive(Debug, Clone, Copy)]
-pub struct Anchor {
-    horizontal: AnchorPosition,
-    vertical: AnchorPosition,
-    offset: (u32, u32),
+pub struct AnchoredPosition {
+    horizontal: Anchor,
+    vertical: Anchor,
+    offset_x: u32,
+    offset_y: u32,
 }
 
-impl Anchor {
+impl AnchoredPosition {
     /**
      * Create a new Anchor for a Scratchpad. 'horizontal' and 'vertical' determine the Anchor
      * point. 'offset' determines the offset from the Anchor point (in pixels).
      */
-    pub fn new(horizontal: AnchorPosition, vertical: AnchorPosition, offset: (u32, u32)) -> Self {
-        if horizontal == Top || horizontal == Bottom {
+    pub fn new(horizontal: Anchor, vertical: Anchor, offset_x: u32, offset_y: u32) -> Self {
+        if horizontal == Anchor::Top || horizontal == Anchor::Bottom {
             panic!("Scratchpad: invalid horizontal anchor {:?}", horizontal);
         }
 
-        if vertical == Left || vertical == Right {
+        if vertical == Anchor::Left || vertical == Anchor::Right {
             panic!("Scratchpad: invalid vertical anchor {:?}", vertical);
         }
 
         Self {
             horizontal,
             vertical,
-            offset,
+            offset_x,
+            offset_y,
         }
     }
 
-    /**
-     * Create a new Achor in the center of the screen with no offset.
-     */
+    /// Create a new Achor in the center of the screen with no offset.
     pub fn default() -> Self {
-        Self::new(Center, Center, (0, 0))
+        Self::new(Anchor::Center, Anchor::Center, 0, 0)
     }
 }
 
@@ -84,14 +82,14 @@ pub struct Scratchpad {
     prog: &'static str,
     w: f32,
     h: f32,
-    anchor: Anchor,
+    position: AnchoredPosition,
 }
 
 impl Scratchpad {
     /// Create a new Scratchpad for holding 'prog'. 'w' and 'h' are the percentage width and height
     /// of the active screen that you want the client to take up when visible.
     /// NOTE: this function will panic if 'w' or 'h' are not within the range 0.0 - 1.0
-    pub fn new(prog: &'static str, w: f32, h: f32, anchor: Anchor) -> Scratchpad {
+    pub fn new(prog: &'static str, w: f32, h: f32, position: AnchoredPosition) -> Scratchpad {
         if w < 0.0 || w > 1.0 || h < 0.0 || h > 1.0 {
             panic!("Scratchpad: w & h must be between 0.0 and 1.0");
         }
@@ -103,7 +101,7 @@ impl Scratchpad {
             prog,
             w,
             h,
-            anchor,
+            position,
         }
     }
 
@@ -115,7 +113,7 @@ impl Scratchpad {
             prog: self.prog,
             w: self.w,
             h: self.h,
-            anchor: self.anchor,
+            position: self.position,
         })
     }
 
@@ -157,19 +155,19 @@ impl Scratchpad {
         let w = (sw as f32 * self.w) as u32;
         let h = (sh as f32 * self.h) as u32;
 
-        let x = match self.anchor.horizontal {
-            Left => sx,
-            Right => sx + sw - w,
-            Center => sx + (sw - w) / 2,
+        let x = match self.position.horizontal {
+            Anchor::Left => sx,
+            Anchor::Right => sx + sw - w,
+            Anchor::Center => sx + (sw - w) / 2,
             _ => unreachable!(),
-        } + self.anchor.offset.0;
+        } + self.position.offset_x;
 
-        let y = match self.anchor.vertical {
-            Top => sy,
-            Bottom => sy + sh - h,
-            Center => sy + (sh - h) / 2,
+        let y = match self.position.vertical {
+            Anchor::Top => sy,
+            Anchor::Bottom => sy + sh - h,
+            Anchor::Center => sy + (sh - h) / 2,
             _ => unreachable!(),
-        } + self.anchor.offset.1;
+        } + self.position.offset_y;
 
         Region::new(x, y, w, h)
     }
