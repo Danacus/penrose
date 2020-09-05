@@ -86,7 +86,6 @@ mod inner {
                 .to_be_bytes()
                 .iter()
                 .map(|n| *n as f64 / 255.0)
-                .skip(1)
                 .collect();
 
             let (r, g, b, a) = (floats[0], floats[1], floats[2], floats[3]);
@@ -108,7 +107,7 @@ mod inner {
 
     impl From<u32> for Color {
         fn from(hex: u32) -> Self {
-            Self::new_from_hex_rgb(hex)
+            Self::new_from_hex(hex)
         }
     }
 

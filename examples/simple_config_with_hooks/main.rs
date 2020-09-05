@@ -11,24 +11,22 @@ extern crate penrose;
 
 use penrose::{
     client::Client,
-    workspace::Workspace,
     contrib::{
         extensions::Scratchpad,
         hooks::{DefaultWorkspace, LayoutSymbolAsRootName},
         layouts::paper,
     },
     data_types::Selector,
+    draw::*,
     hooks::Hook,
-    layout::{bottom_stack, side_stack, monocle, Layout, LayoutConf},
+    layout::{bottom_stack, monocle, side_stack, Layout, LayoutConf},
+    workspace::Workspace,
     Backward, Config, Forward, Less, More, WindowManager, XcbConnection,
-    draw::*, 
 };
 
 use std::error::Error;
 
 use simplelog::{LevelFilter, SimpleLogger};
-
-
 
 const HEIGHT: usize = 18;
 
@@ -42,7 +40,6 @@ const WHITE: u32 = 0xebdbb2;
 const PURPLE: u32 = 0xb16286;
 const BLUE: u32 = 0x458588;
 const RED: u32 = 0xcc241d;
-
 
 // An example of a simple custom hook. In this case we are creating a NewClientHook which will
 // be run each time a new client program is spawned.
