@@ -143,12 +143,11 @@ impl Scratchpad {
         };
 
         if *self.visible.borrow() {
-            wm.hide_client(id);
             self.visible.replace(false);
+            wm.hide_client(id);
         } else {
-            wm.show_client(id);
-            wm.layout_screen(wm.active_screen_index()); // caught by layout_change
             self.visible.replace(true);
+            wm.layout_screen(wm.active_screen_index()); // caught by layout_change
         }
     }
 
@@ -201,8 +200,11 @@ impl Hook for Scratchpad {
         match *self.client.borrow() {
             None => return, // no active scratchpad client
             Some(id) => {
-                if let Some(region) = wm.screen_size(screen_index) {
-                    wm.position_client(id, self.get_position(region));
+                if *self.visible.borrow() {
+                    if let Some(region) = wm.screen_size(screen_index) {
+                        wm.position_client(id, self.get_position(region));
+                    }
+                    wm.show_client(id);
                 }
             }
         }

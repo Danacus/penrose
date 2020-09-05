@@ -84,8 +84,6 @@ const PROP_MODE_REPLACE: u8 = xcb::PROP_MODE_REPLACE as u8;
 const ATOM_WINDOW: u32 = xcb::xproto::ATOM_WINDOW;
 const ATOM_ATOM: u32 = xcb::xproto::ATOM_ATOM;
 const ATOM_CARDINAL: u32 = xcb::xproto::ATOM_CARDINAL;
-const STACK_ABOVE: u32 = xcb::STACK_MODE_ABOVE as u32;
-const STACK_MODE: u16 = xcb::CONFIG_WINDOW_STACK_MODE as u16;
 const WIN_BORDER: u16 = xcb::CONFIG_WINDOW_BORDER_WIDTH as u16;
 const WIN_HEIGHT: u16 = xcb::CONFIG_WINDOW_HEIGHT as u16;
 const WIN_WIDTH: u16 = xcb::CONFIG_WINDOW_WIDTH as u16;
@@ -104,6 +102,14 @@ const EVENT_MASK: &[(u32, u32)] = &[(
         | xcb::EVENT_MASK_SUBSTRUCTURE_REDIRECT
         | xcb::EVENT_MASK_SUBSTRUCTURE_NOTIFY,
 )];
+
+const IGNORED_MODIFIERS: &[u16] = &[
+    0, 
+    xcb::MOD_MASK_2 as u16,
+    xcb::MOD_MASK_LOCK as u16,
+    (xcb::MOD_MASK_2 | xcb::MOD_MASK_LOCK) as u16,
+];
+const IGNORED_MOD_MASK: u16 = (xcb::MOD_MASK_2 | xcb::MOD_MASK_LOCK) as u16;
 
 gen_enum_with_slice!(
     /// Enum with X Atoms.
@@ -589,7 +595,7 @@ impl XConn for XcbConnection {
                 xcb::KEY_PRESS => {
                     let e: &xcb::KeyPressEvent = unsafe { xcb::cast_event(&event) };
                     Some(XEvent::KeyPress {
-                        code: KeyCode::from_key_press(e),
+                        code: KeyCode::from_key_press(e, IGNORED_MOD_MASK),
                     })
                 }
 
@@ -743,7 +749,6 @@ impl XConn for XcbConnection {
                 (WIN_WIDTH, w),
                 (WIN_HEIGHT, h),
                 (WIN_BORDER, border),
-                (STACK_MODE, STACK_ABOVE),
             ],
         );
     }
@@ -834,16 +839,18 @@ impl XConn for XcbConnection {
 
     fn grab_keys(&self, key_bindings: &KeyBindings) {
         for k in key_bindings.keys() {
-            // xcb docs: https://www.mankier.com/3/xcb_grab_key
-            xcb::grab_key(
-                &self.conn,      // xcb connection to X11
-                false,           // don't pass grabbed events through to the client
-                self.root,       // the window to grab: in this case the root window
-                k.mask,          // modifiers to grab
-                k.code,          // keycode to grab
-                GRAB_MODE_ASYNC, // don't lock pointer input while grabbing
-                GRAB_MODE_ASYNC, // don't lock keyboard input while grabbing
-            );
+            for m in IGNORED_MODIFIERS {
+                // xcb docs: https://www.mankier.com/3/xcb_grab_key
+                xcb::grab_key(
+                    &self.conn,      // xcb connection to X11
+                    false,           // don't pass grabbed events through to the client
+                    self.root,       // the window to grab: in this case the root window
+                    k.mask | m,      // modifiers to grab
+                    k.code,          // keycode to grab
+                    GRAB_MODE_ASYNC, // don't lock pointer input while grabbing
+                    GRAB_MODE_ASYNC, // don't lock keyboard input while grabbing
+                );
+            }
         }
 
         // TODO: this needs to be more configurable by the user
